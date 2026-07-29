@@ -1,0 +1,121 @@
+import {
+  findPublishedProducts,
+  findProductBySlug,
+  findFeaturedProducts,
+  findHeroProducts,
+  createProduct,
+  updateProductById,
+  softDeleteProductById,
+  createProductImage,
+  deleteProductImageById,
+  assignProductToCollection,
+  removeProductFromCollection,
+  createProductVariant,
+  updateProductVariantById,
+  deleteProductVariantById,
+} from '../repositories/product.repository.js';
+import { AppError } from '../utils/AppError.js';
+import type { Product, ProductSummary } from '../types/catalog.types.js';
+import type {
+  AdminProduct,
+  CreateProductImageInput,
+  CreateProductInput,
+  ManagedProductImage,
+  CreateProductVariantInput,
+  ManagedProductVariant,
+  UpdateProductVariantInput,
+  UpdateProductInput,
+} from '../types/admin-catalog.types.js';
+
+export async function getAllProducts(): Promise<ProductSummary[]> {
+  return findPublishedProducts();
+}
+
+export async function getProductBySlug(slug: string): Promise<Product> {
+  const product = await findProductBySlug(slug);
+  if (!product) throw AppError.notFound(`Product not found: ${slug}`);
+  return product;
+}
+
+export async function getFeaturedProducts(): Promise<ProductSummary[]> {
+  return findFeaturedProducts();
+}
+
+export async function getHeroProducts(): Promise<ProductSummary[]> {
+  return findHeroProducts();
+}
+
+export async function createManagedProduct(input: CreateProductInput): Promise<AdminProduct> {
+  return createProduct(input);
+}
+
+export async function updateManagedProduct(
+  id: string,
+  input: UpdateProductInput,
+): Promise<AdminProduct> {
+  const product = await updateProductById(id, input);
+  if (!product) throw AppError.notFound('Product not found');
+  return product;
+}
+
+export async function removeManagedProduct(id: string): Promise<void> {
+  const deleted = await softDeleteProductById(id);
+  if (!deleted) throw AppError.notFound('Product not found');
+}
+
+export async function addManagedProductImage(
+  productId: string,
+  input: CreateProductImageInput,
+): Promise<ManagedProductImage> {
+  const image = await createProductImage(productId, input);
+  if (!image) throw AppError.notFound('Product not found');
+  return image;
+}
+
+export async function removeManagedProductImage(productId: string, imageId: string): Promise<void> {
+  const deleted = await deleteProductImageById(productId, imageId);
+  if (!deleted) throw AppError.notFound('Product image not found');
+}
+
+export async function assignManagedProductToCollection(
+  productId: string,
+  collectionId: string,
+): Promise<void> {
+  const assigned = await assignProductToCollection(productId, collectionId);
+  if (!assigned) throw AppError.conflict('Product is already assigned to this collection or does not exist');
+}
+
+export async function removeManagedProductFromCollection(
+  productId: string,
+  collectionId: string,
+): Promise<void> {
+  const removed = await removeProductFromCollection(productId, collectionId);
+  if (!removed) throw AppError.notFound('Product collection assignment not found');
+}
+
+export async function addManagedProductVariant(
+  productId: string,
+  input: CreateProductVariantInput,
+): Promise<ManagedProductVariant> {
+  const variant = await createProductVariant(productId, input);
+  if (!variant) throw AppError.notFound('Product not found');
+  return variant;
+}
+
+export async function updateManagedProductVariant(
+  productId: string,
+  variantId: string,
+  input: UpdateProductVariantInput,
+): Promise<ManagedProductVariant> {
+  const variant = await updateProductVariantById(productId, variantId, input);
+  if (!variant) throw AppError.notFound('Product variant not found');
+  return variant;
+}
+
+export async function removeManagedProductVariant(
+  productId: string,
+  variantId: string,
+): Promise<void> {
+  const removed = await deleteProductVariantById(productId, variantId);
+  if (!removed) throw AppError.notFound('Product variant not found');
+}

@@ -1,0 +1,247 @@
+import type { Request, Response, NextFunction } from 'express';
+import {
+  getAllProducts,
+  getProductBySlug,
+  getFeaturedProducts,
+  getHeroProducts,
+  createManagedProduct,
+  updateManagedProduct,
+  removeManagedProduct,
+  addManagedProductImage,
+  removeManagedProductImage,
+  addManagedProductVariant,
+  assignManagedProductToCollection,
+  removeManagedProductFromCollection,
+  removeManagedProductVariant,
+  updateManagedProductVariant,
+} from '../services/product.service.js';
+import { sendSuccess } from '../utils/response.js';
+import { AppError } from '../utils/AppError.js';
+import { HttpStatus } from '../types/api.types.js';
+import {
+  createProductImageSchema,
+  createProductSchema,
+  updateProductSchema,
+  createProductVariantSchema,
+  productCollectionAssignmentSchema,
+  updateProductVariantSchema,
+} from '../validators/admin-catalog.validator.js';
+
+export async function listProducts(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const products = await getAllProducts();
+    sendSuccess(res, 'Products retrieved', products);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getFeatured(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const products = await getFeaturedProducts();
+    sendSuccess(res, 'Featured products retrieved', products);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getHero(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const products = await getHeroProducts();
+    sendSuccess(res, 'Hero products retrieved', products);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const product = await getProductBySlug(req.params['slug'] as string);
+    sendSuccess(res, 'Product retrieved', product);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function createAdminProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const parsed = createProductSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const product = await createManagedProduct(parsed.data);
+    sendSuccess(res, 'Product created', product, HttpStatus.CREATED);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateAdminProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const parsed = updateProductSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const product = await updateManagedProduct(req.params['id'] as string, parsed.data);
+    sendSuccess(res, 'Product updated', product);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminProduct(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    await removeManagedProduct(req.params['id'] as string);
+    sendSuccess(res, 'Product deleted');
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function createAdminProductImage(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const parsed = createProductImageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const image = await addManagedProductImage(req.params['id'] as string, parsed.data);
+    sendSuccess(res, 'Product image created', image, HttpStatus.CREATED);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminProductImage(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    await removeManagedProductImage(
+      req.params['id'] as string,
+      req.params['imageId'] as string,
+    );
+    sendSuccess(res, 'Product image deleted');
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function assignAdminProductCollection(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const parsed = productCollectionAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    await assignManagedProductToCollection(req.params['id'] as string, parsed.data.collectionId);
+    sendSuccess(res, 'Product assigned to collection', {}, HttpStatus.CREATED);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeAdminProductCollection(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    await removeManagedProductFromCollection(
+      req.params['id'] as string,
+      req.params['collectionId'] as string,
+    );
+    sendSuccess(res, 'Product removed from collection');
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function createAdminProductVariant(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const parsed = createProductVariantSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const variant = await addManagedProductVariant(req.params['id'] as string, parsed.data);
+    sendSuccess(res, 'Product variant created', variant, HttpStatus.CREATED);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateAdminProductVariant(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const parsed = updateProductVariantSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const variant = await updateManagedProductVariant(
+      req.params['id'] as string,
+      req.params['variantId'] as string,
+      parsed.data,
+    );
+    sendSuccess(res, 'Product variant updated', variant);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminProductVariant(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    await removeManagedProductVariant(
+      req.params['id'] as string,
+      req.params['variantId'] as string,
+    );
+    sendSuccess(res, 'Product variant deleted');
+  } catch (err) {
+    next(err);
+  }
+}
