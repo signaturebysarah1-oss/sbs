@@ -25,7 +25,6 @@ import galleryRoutes from './routes/gallery.routes.js';
 import adminGalleryRoutes from './routes/admin-gallery.routes.js';
 import cartRoutes from './routes/cart.routes.js';
 import favoriteRoutes from './routes/favorite.routes.js';
-
 const app = express();
 
 // ─── Security ─────────────────────────────────────────────────────────────────
