@@ -6,6 +6,7 @@ const productFields = {
   name: z.string().trim().min(1, 'name is required').max(255),
   slug: z.string().trim().min(1, 'slug is required').max(255),
   description: z.string().trim().max(10_000).nullable(),
+  category: z.string().trim().max(100).nullable().optional(),
   basePrice: z.number().min(0, 'basePrice must be >= 0'),
   isCustomizable: z.boolean(),
   status: catalogStatusSchema,

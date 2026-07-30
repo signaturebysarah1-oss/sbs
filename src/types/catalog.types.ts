@@ -44,6 +44,7 @@ export interface Product {
   name: string;
   slug: string;
   description: string | null;
+  category: string | null;
   basePrice: number;
   isCustomizable: boolean;
   isFeatured: boolean;

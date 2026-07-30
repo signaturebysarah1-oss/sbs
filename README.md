@@ -187,6 +187,7 @@ Create a product:
   "name": "Classic Leather Loafer",
   "slug": "classic-leather-loafer",
   "description": "Handcrafted leather loafer.",
+  "category": "Shoes",
   "basePrice": 85000,
   "isCustomizable": true,
   "status": "draft",
@@ -195,7 +196,7 @@ Create a product:
 }
 ```
 
-`status` is one of `draft`, `published`, or `archived`. Product updates accept any non-empty subset of the same fields.
+`category` is an optional free-form label (for example, `Shoes`, `Bags`, `Belts`, `Wallets`, or `Accessories`) and is separate from collections. `status` is one of `draft`, `published`, or `archived`. Product updates accept any non-empty subset of the same fields, including `category`.
 
 Add image metadata:
 

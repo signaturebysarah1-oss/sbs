@@ -42,6 +42,7 @@ function rowToProductSummary(row: Record<string, unknown>): ProductSummary {
     name: row['name'] as string,
     slug: row['slug'] as string,
     description: (row['description'] as string | null) ?? null,
+    category: (row['category'] as string | null) ?? null,
     basePrice: parseFloat(row['base_price'] as string),
     isCustomizable: row['is_customizable'] as boolean,
     isFeatured: row['is_featured'] as boolean,
@@ -181,7 +182,7 @@ const PRODUCT_VARIANT_AGGREGATE = `
 export async function findPublishedProducts(): Promise<ProductSummary[]> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -198,7 +199,7 @@ export async function findPublishedProducts(): Promise<ProductSummary[]> {
 export async function findProductBySlug(slug: string): Promise<Product | null> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES},
@@ -220,7 +221,7 @@ export async function findProductBySlug(slug: string): Promise<Product | null> {
 export async function findFeaturedProducts(): Promise<ProductSummary[]> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -238,7 +239,7 @@ export async function findFeaturedProducts(): Promise<ProductSummary[]> {
 export async function findHeroProducts(): Promise<ProductSummary[]> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -257,7 +258,7 @@ export async function findPublishedProductsByIds(ids: string[]): Promise<Product
   if (ids.length === 0) return [];
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -281,6 +282,7 @@ function rowToAdminProduct(row: Record<string, unknown>): AdminProduct {
     name: row['name'] as string,
     slug: row['slug'] as string,
     description: (row['description'] as string | null) ?? null,
+    category: (row['category'] as string | null) ?? null,
     basePrice: parseFloat(row['base_price'] as string),
     isCustomizable: row['is_customizable'] as boolean,
     status: row['status'] as AdminProduct['status'],
@@ -305,14 +307,15 @@ function rowToManagedProductImage(row: Record<string, unknown>): ManagedProductI
 export async function createProduct(input: CreateProductInput): Promise<AdminProduct> {
   const result = await pool.query(
     `INSERT INTO products
-       (name, slug, description, base_price, is_customizable, status, is_featured, is_hero)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id, name, slug, description, base_price, is_customizable, status,
+       (name, slug, description, category, base_price, is_customizable, status, is_featured, is_hero)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, name, slug, description, category, base_price, is_customizable, status,
                is_featured, is_hero, created_at, updated_at`,
     [
       input.name,
       input.slug,
       input.description,
+      input.category ?? null,
       input.basePrice,
       input.isCustomizable,
       input.status,
@@ -328,7 +331,7 @@ export async function updateProductById(
   input: UpdateProductInput,
 ): Promise<AdminProduct | null> {
   const fieldMap: Record<keyof UpdateProductInput, string> = {
-    name: 'name', slug: 'slug', description: 'description', basePrice: 'base_price',
+    name: 'name', slug: 'slug', description: 'description', category: 'category', basePrice: 'base_price',
     isCustomizable: 'is_customizable', status: 'status', isFeatured: 'is_featured', isHero: 'is_hero',
   };
   const entries = (Object.entries(input) as [keyof UpdateProductInput, unknown][])
@@ -340,7 +343,7 @@ export async function updateProductById(
     `UPDATE products
      SET ${assignments.join(', ')}
      WHERE id = $${values.length + 1} AND deleted_at IS NULL
-     RETURNING id, name, slug, description, base_price, is_customizable, status,
+     RETURNING id, name, slug, description, category, base_price, is_customizable, status,
                is_featured, is_hero, created_at, updated_at`,
     [...values, id],
   );

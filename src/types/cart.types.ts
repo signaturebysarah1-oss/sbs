@@ -5,6 +5,7 @@ export interface CartProduct {
   name: string;
   slug: string;
   description: string | null;
+  category: string | null;
   basePrice: number;
   images: ProductImage[];
 }

@@ -28,6 +28,7 @@ function rowToCartItem(row: Record<string, unknown>): CartItem {
       name: row['product_name'] as string,
       slug: row['product_slug'] as string,
       description: (row['product_description'] as string | null) ?? null,
+      category: (row['product_category'] as string | null) ?? null,
       basePrice: parseFloat(row['product_base_price'] as string),
       images: parseImages(row['images']),
     },
@@ -46,7 +47,8 @@ function rowToCartItem(row: Record<string, unknown>): CartItem {
 const CART_ITEMS_QUERY = `
   SELECT ci.id, ci.quantity, ci.unit_price_snapshot, ci.created_at, ci.updated_at,
          p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
-         p.description AS product_description, p.base_price AS product_base_price,
+         p.description AS product_description, p.category AS product_category,
+         p.base_price AS product_base_price,
          pv.id AS variant_id, pv.size_label, pv.size_value, pv.sku, pv.price_adjustment,
          COALESCE(
            json_agg(jsonb_build_object(

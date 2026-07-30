@@ -6,6 +6,7 @@ export interface CreateProductInput {
   name: string;
   slug: string;
   description: string | null;
+  category?: string | null;
   basePrice: number;
   isCustomizable: boolean;
   status: CatalogStatus;
@@ -16,6 +17,7 @@ export interface CreateProductInput {
 export type UpdateProductInput = Partial<CreateProductInput>;
 
 export interface AdminProduct extends CreateProductInput {
+  category: string | null;
   id: string;
   createdAt: string;
   updatedAt: string;
