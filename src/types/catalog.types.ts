@@ -45,6 +45,7 @@ export interface Product {
   slug: string;
   description: string | null;
   category: string | null;
+  gender: 'male' | 'female' | 'unisex' | null;
   basePrice: number;
   isCustomizable: boolean;
   isFeatured: boolean;
@@ -72,6 +73,7 @@ export interface Collection {
   imageUrl: string | null;
   imagePublicId: string | null;
   status: string;
+  isFeatured: boolean;
   sortOrder: number;
   productCount: number;
 }

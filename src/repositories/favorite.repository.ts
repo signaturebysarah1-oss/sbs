@@ -27,6 +27,7 @@ function rowToFavorite(row: Record<string, unknown>): Favorite {
       slug: row['slug'] as string,
       description: (row['description'] as string | null) ?? null,
       category: (row['category'] as string | null) ?? null,
+      gender: (row['gender'] as 'male' | 'female' | 'unisex' | null) ?? null,
       basePrice: parseFloat(row['base_price'] as string),
       isCustomizable: row['is_customizable'] as boolean,
       isFeatured: row['is_featured'] as boolean,
@@ -45,7 +46,7 @@ function rowToFavorite(row: Record<string, unknown>): Favorite {
 export async function findFavoritesByProfileId(profileId: string): Promise<Favorite[]> {
   const result = await pool.query(
     `SELECT f.id, f.product_id, f.created_at,
-            p.name, p.slug, p.description, p.category, p.base_price, p.is_customizable,
+            p.name, p.slug, p.description, p.category, p.gender, p.base_price, p.is_customizable,
             p.is_featured, p.is_hero, p.sort_order, p.meta_title, p.meta_description,
             COALESCE(
               json_agg(jsonb_build_object(

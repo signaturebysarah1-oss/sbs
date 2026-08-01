@@ -7,6 +7,7 @@ export interface CreateProductInput {
   slug: string;
   description: string | null;
   category?: string | null;
+  gender?: 'male' | 'female' | 'unisex' | null;
   basePrice: number;
   isCustomizable: boolean;
   status: CatalogStatus;
@@ -18,6 +19,7 @@ export type UpdateProductInput = Partial<CreateProductInput>;
 
 export interface AdminProduct extends CreateProductInput {
   category: string | null;
+  gender: 'male' | 'female' | 'unisex' | null;
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +40,7 @@ export interface CreateCollectionInput {
   imageUrl?: string | null;
   imagePublicId?: string | null;
   status: CatalogStatus;
+  isFeatured: boolean;
   sortOrder?: number;
 }
 

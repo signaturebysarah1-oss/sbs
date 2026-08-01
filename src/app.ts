@@ -25,6 +25,10 @@ import galleryRoutes from './routes/gallery.routes.js';
 import adminGalleryRoutes from './routes/admin-gallery.routes.js';
 import cartRoutes from './routes/cart.routes.js';
 import favoriteRoutes from './routes/favorite.routes.js';
+import homepageRoutes from './routes/homepage.routes.js';
+import adminHomepageRoutes from './routes/admin-homepage.routes.js';
+import customizationRoutes from './routes/customization.routes.js';
+import adminCustomizationRoutes from './routes/admin-customization.routes.js';
 const app = express();
 
 // ─── Security ─────────────────────────────────────────────────────────────────
@@ -60,6 +64,10 @@ app.use('/api/gallery', galleryRoutes);
 app.use('/api/admin/gallery', adminGalleryRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/favorites', favoriteRoutes);
+app.use('/api/home', homepageRoutes);
+app.use('/api/admin/home', adminHomepageRoutes);
+app.use('/api/customizations', customizationRoutes);
+app.use('/api/admin/customizations', adminCustomizationRoutes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 app.use(notFound);

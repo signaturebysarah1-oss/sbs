@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import { requireAuth, requireRole } from '../middleware/auth.js';
+import { listAdminCustomizations, createCategory, updateCategory, deleteCategory, createOption, updateOption, deleteOption } from '../controllers/customization.controller.js';
+const router = Router();
+router.use(requireAuth, requireRole('admin', 'super_admin'));
+router.get('/', listAdminCustomizations);
+router.post('/categories', createCategory);
+router.patch('/categories/:id', updateCategory);
+router.delete('/categories/:id', deleteCategory);
+router.post('/options', createOption);
+router.patch('/options/:id', updateOption);
+router.delete('/options/:id', deleteOption);
+export default router;

@@ -20,7 +20,7 @@ All API responses use a consistent JSON envelope with `success`, `message`, and 
 
 - Supabase authentication and application profiles
 - Customer, admin, and super-admin roles
-- Public product, collection, material, and color catalog APIs
+- Public product, collection, material, color, carousel, and customization catalog APIs
 - Admin product management, images, variants, and collection assignments
 - Public gallery with admin gallery management
 - Guest and authenticated quote submission with quote status history
@@ -56,6 +56,15 @@ npm run dev
 ```bash
 npm run build
 ```
+
+### Database migrations
+
+Apply the SQL files in `src/database/migrations` in numeric order to a new
+database. Existing deployments should apply
+`004_homepage_and_customizations.sql` after migrations `001` through `003`.
+It adds the homepage, collection-feature, product-gender, and reusable
+customization catalogue schema without replacing the existing product,
+collection, quote, cart, or favorite tables.
 
 ### Production
 
@@ -160,7 +169,7 @@ Authentication labels:
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |
-| `GET` | `/api/products` | Public | Lists published, non-deleted products. |
+| `GET` | `/api/products` | Public | Lists published, non-deleted products. Supports `color`, `category`, `gender`, `size`, `material`, and `sort` filters. |
 | `GET` | `/api/products/featured` | Public | Lists published featured products. |
 | `GET` | `/api/products/hero` | Public | Lists published hero products. |
 | `GET` | `/api/products/:slug` | Public | Returns one published product by slug, including variants and related catalog data. |
@@ -198,6 +207,8 @@ Create a product:
 
 `category` is an optional free-form label (for example, `Shoes`, `Bags`, `Belts`, `Wallets`, or `Accessories`) and is separate from collections. `status` is one of `draft`, `published`, or `archived`. Product updates accept any non-empty subset of the same fields, including `category`.
 
+`gender` is optional and can be `male`, `female`, or `unisex`. Valid product sort values are `newest`, `price_asc`, and `price_desc`. Color filtering uses an exact hex code (for example `%23111111`); material accepts its slugified name (for example `full-grain-leather`).
+
 Add image metadata:
 
 ```json
@@ -234,8 +245,9 @@ Create or update a variant. All fields are optional for creation because databas
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |
-| `GET` | `/api/collections` | Public | Lists published collections. |
+| `GET` | `/api/collections` | Public | Lists published collections; use `?featured=true` for homepage collections. |
 | `GET` | `/api/collections/:slug` | Public | Returns a published collection and its published products. |
+| `GET` | `/api/admin/collections` | Admin/Super Admin token | Lists all collections, including drafts and archived collections. |
 | `POST` | `/api/admin/collections` | Admin/Super Admin token | Creates a collection. |
 | `PATCH` | `/api/admin/collections/:id` | Admin/Super Admin token | Partially updates a collection. |
 | `DELETE` | `/api/admin/collections/:id` | Admin/Super Admin token | Deletes a collection. |
@@ -250,11 +262,48 @@ Create a collection:
   "imageUrl": "https://images.example.com/mens-shoes.jpg",
   "imagePublicId": "collections/mens-shoes",
   "status": "draft",
+  "isFeatured": false,
   "sortOrder": 0
 }
 ```
 
 Updates accept any non-empty subset of these fields.
+
+## Homepage carousel
+
+| Method | Route | Auth | Purpose / usage |
+| --- | --- | --- | --- |
+| `GET` | `/api/home/carousel` | Public | Lists active carousel slides by `sortOrder`. |
+| `GET` | `/api/admin/home/carousel` | Admin/Super Admin token | Lists all carousel slides, including inactive ones. |
+| `POST` | `/api/admin/home/carousel` | Admin/Super Admin token | Creates a carousel slide. |
+| `PATCH` | `/api/admin/home/carousel/:id` | Admin/Super Admin token | Updates a carousel slide. |
+| `DELETE` | `/api/admin/home/carousel/:id` | Admin/Super Admin token | Deletes a carousel slide. |
+
+Carousel create body:
+
+```json
+{
+  "imageUrl": "https://images.example.com/home-slide.jpg",
+  "imagePublicId": "homepage/slide-01",
+  "sortOrder": 0,
+  "isActive": true
+}
+```
+
+## Custom order builder
+
+| Method | Route | Auth | Purpose / usage |
+| --- | --- | --- | --- |
+| `GET` | `/api/customizations` | Public | Returns active customization categories with active options. |
+| `GET` | `/api/admin/customizations` | Admin/Super Admin token | Returns all categories and options, including inactive items. |
+| `POST` | `/api/admin/customizations/categories` | Admin/Super Admin token | Creates a category. |
+| `PATCH` | `/api/admin/customizations/categories/:id` | Admin/Super Admin token | Updates a category. |
+| `DELETE` | `/api/admin/customizations/categories/:id` | Admin/Super Admin token | Deletes a category and its options. |
+| `POST` | `/api/admin/customizations/options` | Admin/Super Admin token | Creates an option. |
+| `PATCH` | `/api/admin/customizations/options/:id` | Admin/Super Admin token | Updates an option. |
+| `DELETE` | `/api/admin/customizations/options/:id` | Admin/Super Admin token | Deletes an option. |
+
+Categories and options use a reusable `active`/`inactive` status and `sortOrder`. The migration seeds Shoe Types with the requested styles and creates empty Materials, Soles, and Colours categories for the admin to populate.
 
 ## Materials and Colors
 

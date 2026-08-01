@@ -7,6 +7,7 @@ const productFields = {
   slug: z.string().trim().min(1, 'slug is required').max(255),
   description: z.string().trim().max(10_000).nullable(),
   category: z.string().trim().max(100).nullable().optional(),
+  gender: z.enum(['male', 'female', 'unisex']).nullable().optional(),
   basePrice: z.number().min(0, 'basePrice must be >= 0'),
   isCustomizable: z.boolean(),
   status: catalogStatusSchema,
@@ -55,6 +56,7 @@ const collectionFields = {
   imageUrl: z.string().trim().min(1).nullable().optional(),
   imagePublicId: z.string().trim().max(255).nullable().optional(),
   status: catalogStatusSchema,
+  isFeatured: z.boolean(),
   sortOrder: z.number().int().min(0).optional(),
 };
 

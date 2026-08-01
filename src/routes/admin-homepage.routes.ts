@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { requireAuth, requireRole } from '../middleware/auth.js';
+import { listAdminCarousel, createCarousel, updateCarousel, deleteCarousel } from '../controllers/homepage.controller.js';
+const router = Router();
+router.use(requireAuth, requireRole('admin', 'super_admin'));
+router.get('/carousel', listAdminCarousel);
+router.post('/carousel', createCarousel);
+router.patch('/carousel/:id', updateCarousel);
+router.delete('/carousel/:id', deleteCarousel);
+export default router;

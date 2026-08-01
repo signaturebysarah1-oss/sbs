@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import {
   getAllCollections,
   getCollectionBySlug,
+  getManagedCollections,
   createManagedCollection,
   removeManagedCollection,
   updateManagedCollection,
@@ -12,12 +13,21 @@ import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
 
 export async function listCollections(
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> {
   try {
-    const collections = await getAllCollections();
+    const featuredQuery = req.query['featured'];
+    let featured: boolean | undefined;
+    if (featuredQuery === 'true') {
+      featured = true;
+    } else if (featuredQuery === 'false') {
+      featured = false;
+    } else if (featuredQuery !== undefined) {
+      throw AppError.badRequest('featured must be true or false');
+    }
+    const collections = await getAllCollections(featured);
     sendSuccess(res, 'Collections retrieved', collections);
   } catch (err) {
     next(err);
@@ -49,6 +59,18 @@ export async function createAdminCollection(
     }
     const collection = await createManagedCollection(parsed.data);
     sendSuccess(res, 'Collection created', collection, HttpStatus.CREATED);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listAdminCollections(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, 'Collections retrieved', await getManagedCollections());
   } catch (err) {
     next(err);
   }

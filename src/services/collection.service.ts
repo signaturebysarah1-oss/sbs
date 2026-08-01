@@ -3,6 +3,7 @@ import {
   findCollectionBySlug,
   findProductIdsByCollectionSlug,
   buildCollectionWithProducts,
+  findAllAdminCollections,
   createCollection,
   updateCollectionById,
   deleteCollectionById,
@@ -16,8 +17,8 @@ import type {
   UpdateCollectionInput,
 } from '../types/admin-catalog.types.js';
 
-export async function getAllCollections(): Promise<Collection[]> {
-  return findPublishedCollections();
+export async function getAllCollections(featured?: boolean): Promise<Collection[]> {
+  return findPublishedCollections(featured);
 }
 
 export async function getCollectionBySlug(slug: string): Promise<CollectionWithProducts> {
@@ -34,6 +35,10 @@ export async function createManagedCollection(
   input: CreateCollectionInput,
 ): Promise<AdminCollection> {
   return createCollection(input);
+}
+
+export async function getManagedCollections(): Promise<AdminCollection[]> {
+  return findAllAdminCollections();
 }
 
 export async function updateManagedCollection(

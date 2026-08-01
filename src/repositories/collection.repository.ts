@@ -15,15 +15,16 @@ function rowToCollection(row: Record<string, unknown>): Collection {
     imageUrl: (row['image_url'] as string | null) ?? null,
     imagePublicId: (row['image_public_id'] as string | null) ?? null,
     status: row['status'] as string,
+    isFeatured: row['is_featured'] as boolean,
     sortOrder: row['sort_order'] as number,
     productCount: parseInt(row['product_count'] as string, 10),
   };
 }
 
-export async function findPublishedCollections(): Promise<Collection[]> {
+export async function findPublishedCollections(featured?: boolean): Promise<Collection[]> {
   const result = await pool.query(
     `SELECT c.id, c.name, c.slug, c.description, c.image_url, c.image_public_id,
-            c.status, c.sort_order,
+            c.status, c.is_featured, c.sort_order,
             COUNT(pc.product_id) FILTER (
               WHERE p.status = 'published' AND p.deleted_at IS NULL
             ) AS product_count
@@ -31,8 +32,10 @@ export async function findPublishedCollections(): Promise<Collection[]> {
      LEFT JOIN product_collections pc ON pc.collection_id = c.id
      LEFT JOIN products p ON p.id = pc.product_id
      WHERE c.status = 'published'
+       AND ($1::boolean IS NULL OR c.is_featured = $1)
      GROUP BY c.id
      ORDER BY c.sort_order ASC, c.name ASC`,
+    [featured ?? null],
   );
   return (result.rows as Record<string, unknown>[]).map(rowToCollection);
 }
@@ -40,7 +43,7 @@ export async function findPublishedCollections(): Promise<Collection[]> {
 export async function findCollectionBySlug(slug: string): Promise<Collection | null> {
   const result = await pool.query(
     `SELECT c.id, c.name, c.slug, c.description, c.image_url, c.image_public_id,
-            c.status, c.sort_order,
+            c.status, c.is_featured, c.sort_order,
             COUNT(pc.product_id) FILTER (
               WHERE p.status = 'published' AND p.deleted_at IS NULL
             ) AS product_count
@@ -92,6 +95,7 @@ function rowToAdminCollection(row: Record<string, unknown>): AdminCollection {
     imageUrl: (row['image_url'] as string | null) ?? null,
     imagePublicId: (row['image_public_id'] as string | null) ?? null,
     status: row['status'] as AdminCollection['status'],
+    isFeatured: row['is_featured'] as boolean,
     sortOrder: row['sort_order'] as number,
     productCount: parseInt(row['product_count'] as string, 10),
     createdAt: (row['created_at'] as Date).toISOString(),
@@ -100,15 +104,30 @@ function rowToAdminCollection(row: Record<string, unknown>): AdminCollection {
 }
 
 const ADMIN_COLLECTION_RETURNING = `
-  id, name, slug, description, image_url, image_public_id, status, sort_order,
+  id, name, slug, description, image_url, image_public_id, status, is_featured, sort_order,
   0::bigint AS product_count, created_at, updated_at
 `;
+
+export async function findAllAdminCollections(): Promise<AdminCollection[]> {
+  const result = await pool.query(
+    `SELECT c.id, c.name, c.slug, c.description, c.image_url, c.image_public_id,
+            c.status, c.is_featured, c.sort_order,
+            COUNT(pc.product_id) FILTER (WHERE p.deleted_at IS NULL) AS product_count,
+            c.created_at, c.updated_at
+     FROM collections c
+     LEFT JOIN product_collections pc ON pc.collection_id = c.id
+     LEFT JOIN products p ON p.id = pc.product_id
+     GROUP BY c.id
+     ORDER BY c.sort_order ASC, c.name ASC`,
+  );
+  return (result.rows as Record<string, unknown>[]).map(rowToAdminCollection);
+}
 
 export async function createCollection(input: CreateCollectionInput): Promise<AdminCollection> {
   const result = await pool.query(
     `INSERT INTO collections
-       (name, slug, description, image_url, image_public_id, status, sort_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (name, slug, description, image_url, image_public_id, status, is_featured, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING ${ADMIN_COLLECTION_RETURNING}`,
     [
       input.name,
@@ -117,6 +136,7 @@ export async function createCollection(input: CreateCollectionInput): Promise<Ad
       input.imageUrl ?? null,
       input.imagePublicId ?? null,
       input.status,
+      input.isFeatured,
       input.sortOrder ?? 0,
     ],
   );
@@ -129,7 +149,7 @@ export async function updateCollectionById(
 ): Promise<AdminCollection | null> {
   const fieldMap: Record<keyof UpdateCollectionInput, string> = {
     name: 'name', slug: 'slug', description: 'description', imageUrl: 'image_url',
-    imagePublicId: 'image_public_id', status: 'status', sortOrder: 'sort_order',
+    imagePublicId: 'image_public_id', status: 'status', isFeatured: 'is_featured', sortOrder: 'sort_order',
   };
   const entries = (Object.entries(input) as [keyof UpdateCollectionInput, unknown][])
     .filter(([, value]) => value !== undefined);

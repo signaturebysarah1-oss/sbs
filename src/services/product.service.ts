@@ -13,6 +13,7 @@ import {
   createProductVariant,
   updateProductVariantById,
   deleteProductVariantById,
+  type ProductFilter,
 } from '../repositories/product.repository.js';
 import { AppError } from '../utils/AppError.js';
 import type { Product, ProductSummary } from '../types/catalog.types.js';
@@ -27,8 +28,8 @@ import type {
   UpdateProductInput,
 } from '../types/admin-catalog.types.js';
 
-export async function getAllProducts(): Promise<ProductSummary[]> {
-  return findPublishedProducts();
+export async function getAllProducts(filters?: ProductFilter): Promise<ProductSummary[]> {
+  return findPublishedProducts(filters);
 }
 
 export async function getProductBySlug(slug: string): Promise<Product> {

@@ -19,6 +19,15 @@ import type {
   UpdateProductVariantInput,
 } from '../types/admin-catalog.types.js';
 
+export interface ProductFilter {
+  color?: string;
+  category?: string;
+  gender?: 'male' | 'female' | 'unisex';
+  size?: string;
+  material?: string;
+  sort?: 'newest' | 'price_asc' | 'price_desc';
+}
+
 // ─── Row mappers ──────────────────────────────────────────────────────────────
 
 function parseJsonAgg<T>(value: unknown): T[] {
@@ -43,6 +52,7 @@ function rowToProductSummary(row: Record<string, unknown>): ProductSummary {
     slug: row['slug'] as string,
     description: (row['description'] as string | null) ?? null,
     category: (row['category'] as string | null) ?? null,
+    gender: (row['gender'] as Product['gender']) ?? null,
     basePrice: parseFloat(row['base_price'] as string),
     isCustomizable: row['is_customizable'] as boolean,
     isFeatured: row['is_featured'] as boolean,
@@ -179,19 +189,34 @@ const PRODUCT_VARIANT_AGGREGATE = `
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function findPublishedProducts(): Promise<ProductSummary[]> {
+export async function findPublishedProducts(filters: ProductFilter = {}): Promise<ProductSummary[]> {
+  const values: unknown[] = [];
+  const where = ["p.status = 'published'", 'p.deleted_at IS NULL'];
+  const add = (sql: string, value: string) => { values.push(value); where.push(sql.replace('?', `$${values.length}`)); };
+  if (filters.category) add('p.category ILIKE ?', filters.category);
+  if (filters.gender) add('p.gender = ?', filters.gender);
+  if (filters.color) add(`EXISTS (SELECT 1 FROM product_colors fpc JOIN colors fc ON fc.id = fpc.color_id WHERE fpc.product_id = p.id AND fc.hex_code = ?)`, filters.color);
+  if (filters.size) {
+    values.push(filters.size, filters.size);
+    where.push(`EXISTS (SELECT 1 FROM product_variants fpv WHERE fpv.product_id = p.id AND (fpv.size_label = $${values.length - 1} OR fpv.size_value::text = $${values.length}))`);
+  }
+  if (filters.material) add(`EXISTS (SELECT 1 FROM product_materials fpm JOIN materials fm ON fm.id = fpm.material_id WHERE fpm.product_id = p.id AND lower(regexp_replace(fm.name, '[^a-z0-9]+', '-', 'g')) = lower(?))`, filters.material);
+  const orderBy = filters.sort === 'newest' ? 'p.created_at DESC, p.id DESC'
+    : filters.sort === 'price_asc' ? 'p.base_price ASC, p.name ASC'
+    : filters.sort === 'price_desc' ? 'p.base_price DESC, p.name ASC'
+    : 'p.sort_order ASC, p.name ASC';
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.category, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.gender, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
      FROM products p
      ${PRODUCT_JOINS}
-     WHERE p.status = 'published'
-       AND p.deleted_at IS NULL
+     WHERE ${where.join(' AND ')}
      GROUP BY p.id
-     ORDER BY p.sort_order ASC, p.name ASC`,
+     ORDER BY ${orderBy}`,
+    values,
   );
   return (result.rows as Record<string, unknown>[]).map(rowToProductSummary);
 }
@@ -199,7 +224,7 @@ export async function findPublishedProducts(): Promise<ProductSummary[]> {
 export async function findProductBySlug(slug: string): Promise<Product | null> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.category, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.gender, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES},
@@ -221,7 +246,7 @@ export async function findProductBySlug(slug: string): Promise<Product | null> {
 export async function findFeaturedProducts(): Promise<ProductSummary[]> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.category, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.gender, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -239,7 +264,7 @@ export async function findFeaturedProducts(): Promise<ProductSummary[]> {
 export async function findHeroProducts(): Promise<ProductSummary[]> {
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.category, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.gender, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -258,7 +283,7 @@ export async function findPublishedProductsByIds(ids: string[]): Promise<Product
   if (ids.length === 0) return [];
   const result = await pool.query(
     `SELECT
-       p.id, p.name, p.slug, p.description, p.category, p.base_price,
+       p.id, p.name, p.slug, p.description, p.category, p.gender, p.base_price,
        p.is_customizable, p.is_featured, p.is_hero, p.sort_order,
        p.meta_title, p.meta_description,
        ${PRODUCT_AGGREGATES}
@@ -283,6 +308,7 @@ function rowToAdminProduct(row: Record<string, unknown>): AdminProduct {
     slug: row['slug'] as string,
     description: (row['description'] as string | null) ?? null,
     category: (row['category'] as string | null) ?? null,
+    gender: (row['gender'] as AdminProduct['gender']) ?? null,
     basePrice: parseFloat(row['base_price'] as string),
     isCustomizable: row['is_customizable'] as boolean,
     status: row['status'] as AdminProduct['status'],
@@ -307,15 +333,16 @@ function rowToManagedProductImage(row: Record<string, unknown>): ManagedProductI
 export async function createProduct(input: CreateProductInput): Promise<AdminProduct> {
   const result = await pool.query(
     `INSERT INTO products
-       (name, slug, description, category, base_price, is_customizable, status, is_featured, is_hero)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, name, slug, description, category, base_price, is_customizable, status,
+       (name, slug, description, category, gender, base_price, is_customizable, status, is_featured, is_hero)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
                is_featured, is_hero, created_at, updated_at`,
     [
       input.name,
       input.slug,
       input.description,
       input.category ?? null,
+      input.gender ?? null,
       input.basePrice,
       input.isCustomizable,
       input.status,
@@ -331,7 +358,7 @@ export async function updateProductById(
   input: UpdateProductInput,
 ): Promise<AdminProduct | null> {
   const fieldMap: Record<keyof UpdateProductInput, string> = {
-    name: 'name', slug: 'slug', description: 'description', category: 'category', basePrice: 'base_price',
+    name: 'name', slug: 'slug', description: 'description', category: 'category', gender: 'gender', basePrice: 'base_price',
     isCustomizable: 'is_customizable', status: 'status', isFeatured: 'is_featured', isHero: 'is_hero',
   };
   const entries = (Object.entries(input) as [keyof UpdateProductInput, unknown][])
@@ -343,7 +370,7 @@ export async function updateProductById(
     `UPDATE products
      SET ${assignments.join(', ')}
      WHERE id = $${values.length + 1} AND deleted_at IS NULL
-     RETURNING id, name, slug, description, category, base_price, is_customizable, status,
+     RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
                is_featured, is_hero, created_at, updated_at`,
     [...values, id],
   );
