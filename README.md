@@ -172,7 +172,7 @@ Authentication labels:
 | `GET` | `/api/products` | Public | Lists published, non-deleted products. Supports `color`, `category`, `gender`, `size`, `material`, and `sort` filters. |
 | `GET` | `/api/products/featured` | Public | Lists published featured products. |
 | `GET` | `/api/products/hero` | Public | Lists published hero products. |
-| `GET` | `/api/products/:slug` | Public | Returns one published product by slug, including variants and related catalog data. |
+| `GET` | `/api/products/:slug` | Public | Returns one published product with `colors`, `materials`, and `sizes` catalog arrays. |
 
 ### Admin product management
 
@@ -201,13 +201,23 @@ Create a product:
   "isCustomizable": true,
   "status": "draft",
   "isFeatured": false,
-  "isHero": false
+  "isHero": false,
+  "colors": [
+    { "name": "Brown", "hex": "#8B4513" },
+    { "name": "Black", "hex": "#000000" }
+  ],
+  "materials": [
+    { "name": "Full Grain Leather" }
+  ],
+  "sizes": [40, 41, 42]
 }
 ```
 
 `category` is an optional free-form label (for example, `Shoes`, `Bags`, `Belts`, `Wallets`, or `Accessories`) and is separate from collections. `status` is one of `draft`, `published`, or `archived`. Product updates accept any non-empty subset of the same fields, including `category`.
 
 `gender` is optional and can be `male`, `female`, or `unisex`. Valid product sort values are `newest`, `price_asc`, and `price_desc`. Color filtering uses an exact hex code (for example `%23111111`); material accepts its slugified name (for example `full-grain-leather`).
+
+`colors`, `materials`, and `sizes` are optional create/update fields. Supplying one replaces that product's corresponding availability list in the same transaction. The API creates or reuses the necessary catalog records; no prior catalog request is needed. Sizes are stored through `sizes` and `product_sizes`, independently of legacy product variants. All product list and detail responses include `colors`, `materials`, and `sizes`; color objects expose both `hex` and `hexCode`.
 
 Add image metadata:
 
@@ -402,10 +412,10 @@ Submit a guest quote:
   "items": [
     {
       "productId": "00000000-0000-0000-0000-000000000000",
-      "productNameSnapshot": "Classic Leather Loafer",
-      "variantLabelSnapshot": "Size 42",
-      "materialNameSnapshot": "Full Grain Leather",
-      "colorNameSnapshot": "Brown",
+      "productName": "Classic Leather Loafer",
+      "size": 42,
+      "material": "Full Grain Leather",
+      "color": "Brown",
       "quantity": 1,
       "unitPriceSnapshot": 85000,
       "customMeasurements": { "footLength": 27 },
@@ -414,6 +424,8 @@ Submit a guest quote:
   ]
 }
 ```
+
+`productName`, `color`, `material`, and `size` are saved in the existing quote snapshot fields. When `size` is supplied, it must be an active size assigned to that product through `product_sizes`. The prior `*Snapshot` field names remain supported for compatibility.
 
 For authenticated submissions, send a customer token; guest contact fields are not required. Quote statuses are `pending`, `reviewing`, `approved`, `completed`, and `cancelled`.
 
@@ -428,7 +440,7 @@ Update quote status:
 
 ## Cart
 
-Cart endpoints are authenticated-only. A cart belongs to the authenticated profile. Adding the same product and variant combination increases its quantity instead of creating a duplicate. The current product/variant price is saved in the existing `unit_price_snapshot` field when the item is first added.
+Cart endpoints are authenticated-only. A cart belongs to the authenticated profile. Adding the same product, variant, color, material, and size combination increases its quantity instead of creating a duplicate. The current product/variant and option price is saved in the existing `unit_price_snapshot` field when the item is first added.
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |
@@ -443,12 +455,14 @@ Add an item:
 ```json
 {
   "productId": "00000000-0000-0000-0000-000000000000",
-  "variantId": "00000000-0000-0000-0000-000000000000",
+  "selectedColor": "Brown",
+  "selectedMaterial": "Full Grain Leather",
+  "selectedSize": 42,
   "quantity": 1
 }
 ```
 
-`variantId` is optional. When supplied, it must belong to the supplied product.
+`selectedColor`, `selectedMaterial`, and `selectedSize` must be available on the product. `selectedSize` is validated through `product_sizes`; it does not create or resolve a product variant. `variantId` remains supported for legacy variant use independently of `selectedSize`.
 
 Update quantity:
 

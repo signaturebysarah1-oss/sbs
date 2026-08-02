@@ -24,6 +24,7 @@ export interface ColorRef {
   id: string;
   name: string;
   hexCode: string | null;
+  hex: string | null;
 }
 
 export interface ProductVariant {
@@ -57,10 +58,10 @@ export interface Product {
   collections: CollectionRef[];
   materials: MaterialRef[];
   colors: ColorRef[];
+  sizes: number[];
   variants: ProductVariant[];
 }
 
-// List view — same as Product but variants omitted for performance
 export type ProductSummary = Omit<Product, 'variants'>;
 
 // ─── Collection ───────────────────────────────────────────────────────────────

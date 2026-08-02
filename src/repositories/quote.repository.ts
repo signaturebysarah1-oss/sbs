@@ -71,6 +71,22 @@ export async function createQuoteWithItems(data: {
   try {
     await client.query('BEGIN');
 
+    // Explicit quote sizes are product-level choices. Legacy variant label
+    // snapshots remain untouched for backwards compatibility.
+    for (const item of data.items) {
+      if (item.size === null || item.size === undefined) continue;
+      const sizeResult = await client.query(
+        `SELECT 1
+         FROM product_sizes ps
+         JOIN sizes s ON s.id = ps.size_id
+         WHERE ps.product_id = $1 AND s.value = $2 AND s.is_active = true`,
+        [item.productId, item.size],
+      );
+      if (sizeResult.rows.length === 0) {
+        throw new Error(`Selected size ${item.size} is not available for product ${item.productId}`);
+      }
+    }
+
     // Serialize number allocation per year so concurrent submissions cannot
     // receive the same unique SBS-YYYY-NNNNN reference number.
     const year = new Date().getFullYear();

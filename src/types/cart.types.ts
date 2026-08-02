@@ -24,6 +24,9 @@ export interface CartItem {
   unitPriceSnapshot: number;
   createdAt: string;
   updatedAt: string;
+  selectedColor: string | null;
+  selectedMaterial: string | null;
+  selectedSize: number | null;
   product: CartProduct;
   variant: CartVariant | null;
 }
@@ -38,5 +41,8 @@ export interface Cart {
 export interface AddCartItemInput {
   productId: string;
   variantId?: string | null;
+  selectedColor?: string | null;
+  selectedMaterial?: string | null;
+  selectedSize?: number | null;
   quantity: number;
 }

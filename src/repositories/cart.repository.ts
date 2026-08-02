@@ -1,5 +1,5 @@
 import { pool } from '../database/pool.js';
-import type { Cart, CartItem } from '../types/cart.types.js';
+import type { AddCartItemInput, Cart, CartItem } from '../types/cart.types.js';
 
 function parseImages(value: unknown): CartItem['product']['images'] {
   if (Array.isArray(value)) {
@@ -23,6 +23,9 @@ function rowToCartItem(row: Record<string, unknown>): CartItem {
     unitPriceSnapshot: parseFloat(row['unit_price_snapshot'] as string),
     createdAt: (row['created_at'] as Date).toISOString(),
     updatedAt: (row['updated_at'] as Date).toISOString(),
+    selectedColor: (row['selected_color_name'] as string | null) ?? null,
+    selectedMaterial: (row['selected_material_name'] as string | null) ?? null,
+    selectedSize: row['selected_size_value'] == null ? null : parseFloat(row['selected_size_value'] as string),
     product: {
       id: row['product_id'] as string,
       name: row['product_name'] as string,
@@ -50,6 +53,9 @@ const CART_ITEMS_QUERY = `
          p.description AS product_description, p.category AS product_category,
          p.base_price AS product_base_price,
          pv.id AS variant_id, pv.size_label, pv.size_value, pv.sku, pv.price_adjustment,
+         COALESCE(selected_size.value, pv.size_value) AS selected_size_value,
+         COALESCE(selected_color.name, variant_color.name) AS selected_color_name,
+         selected_material.name AS selected_material_name,
          COALESCE(
            json_agg(jsonb_build_object(
              'id', pi.id, 'image_url', pi.image_url, 'image_public_id', pi.image_public_id,
@@ -60,9 +66,13 @@ const CART_ITEMS_QUERY = `
   FROM cart_items ci
   JOIN products p ON p.id = ci.product_id
   LEFT JOIN product_variants pv ON pv.id = ci.variant_id
+  LEFT JOIN sizes selected_size ON selected_size.id = ci.size_id
+  LEFT JOIN colors selected_color ON selected_color.id = ci.color_id
+  LEFT JOIN colors variant_color ON variant_color.id = pv.color_id
+  LEFT JOIN materials selected_material ON selected_material.id = ci.material_id
   LEFT JOIN product_images pi ON pi.product_id = p.id
   WHERE ci.cart_id = $1
-  GROUP BY ci.id, p.id, pv.id
+  GROUP BY ci.id, p.id, pv.id, selected_size.id, selected_color.id, variant_color.id, selected_material.id
   ORDER BY ci.created_at ASC
 `;
 
@@ -98,9 +108,7 @@ export async function findOrCreateCartByProfileId(profileId: string): Promise<Ca
 
 export async function addCartItem(
   profileId: string,
-  productId: string,
-  variantId: string | null,
-  quantity: number,
+  input: AddCartItemInput,
 ): Promise<Cart | null> {
   const client = await pool.connect();
   try {
@@ -118,37 +126,92 @@ export async function addCartItem(
         .rows[0] as Record<string, unknown>['id'] as string;
     await client.query('SELECT id FROM carts WHERE id = $1 FOR UPDATE', [cartId]);
 
+    const variantId = input.variantId ?? null;
+
     const productResult = await client.query(
-      `SELECT p.base_price, COALESCE(pv.price_adjustment, 0) AS price_adjustment
+      `SELECT p.base_price, COALESCE(pv.price_adjustment, 0) AS variant_price_adjustment
        FROM products p
        LEFT JOIN product_variants pv ON pv.id = $2 AND pv.product_id = p.id
        WHERE p.id = $1 AND p.deleted_at IS NULL
          AND ($2::uuid IS NULL OR pv.id IS NOT NULL)`,
-      [productId, variantId],
+      [input.productId, variantId],
     );
     if (productResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return null;
     }
     const priceRow = productResult.rows[0] as Record<string, unknown>;
+    let sizeId: string | null = null;
+    let sizeAdjustment = 0;
+    if (input.selectedSize !== undefined && input.selectedSize !== null) {
+      const sizeResult = await client.query(
+        `SELECT s.id, ps.price_adjustment
+         FROM product_sizes ps JOIN sizes s ON s.id = ps.size_id
+         WHERE ps.product_id = $1 AND s.value = $2 AND s.is_active = true`,
+        [input.productId, input.selectedSize],
+      );
+      if (sizeResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      const size = sizeResult.rows[0] as Record<string, unknown>;
+      sizeId = size['id'] as string;
+      sizeAdjustment = parseFloat(size['price_adjustment'] as string);
+    }
+    let colorId: string | null = null;
+    let materialId: string | null = null;
+    let colorAdjustment = 0;
+    let materialAdjustment = 0;
+    if (input.selectedColor) {
+      const colorResult = await client.query(
+        `SELECT c.id, pc.price_adjustment
+         FROM product_colors pc JOIN colors c ON c.id = pc.color_id
+         WHERE pc.product_id = $1 AND lower(c.name) = lower($2) AND c.is_active = true`,
+        [input.productId, input.selectedColor],
+      );
+      if (colorResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      const color = colorResult.rows[0] as Record<string, unknown>;
+      colorId = color['id'] as string;
+      colorAdjustment = parseFloat(color['price_adjustment'] as string);
+    }
+    if (input.selectedMaterial) {
+      const materialResult = await client.query(
+        `SELECT m.id, pm.price_adjustment
+         FROM product_materials pm JOIN materials m ON m.id = pm.material_id
+         WHERE pm.product_id = $1 AND lower(m.name) = lower($2) AND m.is_active = true`,
+        [input.productId, input.selectedMaterial],
+      );
+      if (materialResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      const material = materialResult.rows[0] as Record<string, unknown>;
+      materialId = material['id'] as string;
+      materialAdjustment = parseFloat(material['price_adjustment'] as string);
+    }
     const unitPrice = parseFloat(priceRow['base_price'] as string)
-      + parseFloat(priceRow['price_adjustment'] as string);
+      + parseFloat(priceRow['variant_price_adjustment'] as string) + sizeAdjustment + colorAdjustment + materialAdjustment;
 
     const existing = await client.query(
       `SELECT id FROM cart_items
-       WHERE cart_id = $1 AND product_id = $2 AND variant_id IS NOT DISTINCT FROM $3`,
-      [cartId, productId, variantId],
+       WHERE cart_id = $1 AND product_id = $2 AND variant_id IS NOT DISTINCT FROM $3
+         AND color_id IS NOT DISTINCT FROM $4 AND material_id IS NOT DISTINCT FROM $5
+         AND size_id IS NOT DISTINCT FROM $6`,
+      [cartId, input.productId, variantId, colorId, materialId, sizeId],
     );
     if (existing.rows.length > 0) {
       await client.query(
         'UPDATE cart_items SET quantity = quantity + $1 WHERE id = $2',
-        [quantity, (existing.rows[0] as Record<string, unknown>)['id']],
+        [input.quantity, (existing.rows[0] as Record<string, unknown>)['id']],
       );
     } else {
       await client.query(
-        `INSERT INTO cart_items (cart_id, product_id, variant_id, quantity, unit_price_snapshot)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [cartId, productId, variantId, quantity, unitPrice],
+        `INSERT INTO cart_items (cart_id, product_id, variant_id, material_id, color_id, size_id, quantity, unit_price_snapshot)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [cartId, input.productId, variantId, materialId, colorId, sizeId, input.quantity, unitPrice],
       );
     }
     await client.query('UPDATE carts SET updated_at = now() WHERE id = $1', [cartId]);

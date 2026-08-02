@@ -8,6 +8,7 @@ export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 export interface QuoteItemInput {
   productId: string;
   productNameSnapshot: string;
+  size?: number | null;
   variantLabelSnapshot?: string | null;
   materialNameSnapshot?: string | null;
   colorNameSnapshot?: string | null;

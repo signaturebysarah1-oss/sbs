@@ -4,5 +4,6 @@ export interface Favorite {
   id: string;
   productId: string;
   createdAt: string;
-  product: ProductSummary;
+  // Favorites retain their established lightweight product payload.
+  product: Omit<ProductSummary, 'sizes'>;
 }

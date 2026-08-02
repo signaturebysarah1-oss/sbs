@@ -2,6 +2,15 @@ import type { ProductImage } from './catalog.types.js';
 
 export type CatalogStatus = 'draft' | 'published' | 'archived';
 
+export interface CreateProductColorInput {
+  name: string;
+  hex: string;
+}
+
+export interface CreateProductMaterialInput {
+  name: string;
+}
+
 export interface CreateProductInput {
   name: string;
   slug: string;
@@ -13,6 +22,9 @@ export interface CreateProductInput {
   status: CatalogStatus;
   isFeatured: boolean;
   isHero: boolean;
+  colors?: CreateProductColorInput[];
+  materials?: CreateProductMaterialInput[];
+  sizes?: number[];
 }
 
 export type UpdateProductInput = Partial<CreateProductInput>;
@@ -23,6 +35,12 @@ export interface AdminProduct extends CreateProductInput {
   id: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AdminProductDetails extends Omit<AdminProduct, 'colors' | 'materials' | 'sizes'> {
+  colors: import('./catalog.types.js').ColorRef[];
+  materials: import('./catalog.types.js').MaterialRef[];
+  sizes: number[];
 }
 
 export interface CreateProductImageInput {

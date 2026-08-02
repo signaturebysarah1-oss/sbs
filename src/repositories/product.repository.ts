@@ -1,4 +1,5 @@
 import { pool } from '../database/pool.js';
+import type { PoolClient } from 'pg';
 import type {
   Product,
   ProductSummary,
@@ -10,6 +11,7 @@ import type {
 } from '../types/catalog.types.js';
 import type {
   AdminProduct,
+  AdminProductDetails,
   CreateProductImageInput,
   CreateProductInput,
   ManagedProductImage,
@@ -45,6 +47,7 @@ function rowToProductSummary(row: Record<string, unknown>): ProductSummary {
   const collections = parseJsonAgg<CollectionRef>(row['collections']);
   const materials = parseJsonAgg<MaterialRef>(row['materials']);
   const colors = parseJsonAgg<ColorRef>(row['colors']);
+  const sizes = parseJsonAgg<number | string>(row['sizes']).map((size) => Number(size));
 
   return {
     id: row['id'] as string,
@@ -81,35 +84,32 @@ function rowToProductSummary(row: Record<string, unknown>): ProductSummary {
       id: col['id' as keyof typeof col] as unknown as string,
       name: col['name' as keyof typeof col] as unknown as string,
       hexCode: (col['hex_code' as keyof typeof col] as unknown as string | null) ?? null,
+      hex: (col['hex_code' as keyof typeof col] as unknown as string | null) ?? null,
     })),
+    sizes,
   };
 }
 
 function rowToProduct(row: Record<string, unknown>): Product {
   const summary = rowToProductSummary(row);
   const variants = parseJsonAgg<Record<string, unknown>>(row['variants']);
-
   return {
     ...summary,
-    variants: variants.map(
-      (v): ProductVariant => ({
-        id: v['id'] as string,
-        sizeLabel: (v['size_label'] as string | null) ?? null,
-        sizeValue: v['size_value'] != null ? parseFloat(v['size_value'] as string) : null,
-        sku: (v['sku'] as string | null) ?? null,
-        priceAdjustment: parseFloat(v['price_adjustment'] as string),
-        isAvailable: v['is_available'] as boolean,
-        sortOrder: v['sort_order'] as number,
-        color:
-          v['color_id'] != null
-            ? {
-                id: v['color_id'] as string,
-                name: v['color_name'] as string,
-                hexCode: (v['color_hex'] as string | null) ?? null,
-              }
-            : null,
-      }),
-    ),
+    variants: variants.map((variant): ProductVariant => ({
+      id: variant['id'] as string,
+      sizeLabel: (variant['size_label'] as string | null) ?? null,
+      sizeValue: variant['size_value'] == null ? null : parseFloat(variant['size_value'] as string),
+      sku: (variant['sku'] as string | null) ?? null,
+      priceAdjustment: parseFloat(variant['price_adjustment'] as string),
+      isAvailable: variant['is_available'] as boolean,
+      sortOrder: variant['sort_order'] as number,
+      color: variant['color_id'] == null ? null : {
+        id: variant['color_id'] as string,
+        name: variant['color_name'] as string,
+        hexCode: (variant['color_hex'] as string | null) ?? null,
+        hex: (variant['color_hex'] as string | null) ?? null,
+      },
+    })),
   };
 }
 
@@ -154,7 +154,15 @@ const PRODUCT_AGGREGATES = `
       'hex_code', col.hex_code
     )) FILTER (WHERE col.id IS NOT NULL),
     '[]'
-  ) AS colors
+  ) AS colors,
+
+  COALESCE(
+    (SELECT json_agg(s.value ORDER BY s.value)
+     FROM product_sizes ps
+     JOIN sizes s ON s.id = ps.size_id
+     WHERE ps.product_id = p.id AND s.is_active = true),
+    '[]'
+  ) AS sizes
 `;
 
 const PRODUCT_JOINS = `
@@ -167,22 +175,19 @@ const PRODUCT_JOINS = `
   LEFT JOIN colors col               ON col.id = pcol.color_id AND col.is_active = true
 `;
 
+// Legacy variants remain independently managed and are only returned on detail
+// responses. Product sizes are sourced exclusively from product_sizes above.
 const PRODUCT_VARIANT_AGGREGATE = `
   COALESCE(
-    json_agg(
-      jsonb_build_object(
-        'id',               pv.id,
-        'size_label',       pv.size_label,
-        'size_value',       pv.size_value,
-        'sku',              pv.sku,
-        'price_adjustment', pv.price_adjustment,
-        'is_available',     pv.is_available,
-        'sort_order',       pv.sort_order,
-        'color_id',         vc.id,
-        'color_name',       vc.name,
-        'color_hex',        vc.hex_code
-      ) ORDER BY pv.sort_order ASC
-    ) FILTER (WHERE pv.id IS NOT NULL),
+    (SELECT json_agg(jsonb_build_object(
+      'id', v.id, 'size_label', v.size_label, 'size_value', v.size_value,
+      'sku', v.sku, 'price_adjustment', v.price_adjustment,
+      'is_available', v.is_available, 'sort_order', v.sort_order,
+      'color_id', vc.id, 'color_name', vc.name, 'color_hex', vc.hex_code
+    ) ORDER BY v.sort_order ASC)
+     FROM product_variants v
+     LEFT JOIN colors vc ON vc.id = v.color_id
+     WHERE v.product_id = p.id),
     '[]'
   ) AS variants
 `;
@@ -196,10 +201,7 @@ export async function findPublishedProducts(filters: ProductFilter = {}): Promis
   if (filters.category) add('p.category ILIKE ?', filters.category);
   if (filters.gender) add('p.gender = ?', filters.gender);
   if (filters.color) add(`EXISTS (SELECT 1 FROM product_colors fpc JOIN colors fc ON fc.id = fpc.color_id WHERE fpc.product_id = p.id AND fc.hex_code = ?)`, filters.color);
-  if (filters.size) {
-    values.push(filters.size, filters.size);
-    where.push(`EXISTS (SELECT 1 FROM product_variants fpv WHERE fpv.product_id = p.id AND (fpv.size_label = $${values.length - 1} OR fpv.size_value::text = $${values.length}))`);
-  }
+  if (filters.size) add(`EXISTS (SELECT 1 FROM product_sizes fps JOIN sizes fs ON fs.id = fps.size_id WHERE fps.product_id = p.id AND fs.value::text = ?)`, filters.size);
   if (filters.material) add(`EXISTS (SELECT 1 FROM product_materials fpm JOIN materials fm ON fm.id = fpm.material_id WHERE fpm.product_id = p.id AND lower(regexp_replace(fm.name, '[^a-z0-9]+', '-', 'g')) = lower(?))`, filters.material);
   const orderBy = filters.sort === 'newest' ? 'p.created_at DESC, p.id DESC'
     : filters.sort === 'price_asc' ? 'p.base_price ASC, p.name ASC'
@@ -231,8 +233,6 @@ export async function findProductBySlug(slug: string): Promise<Product | null> {
        ${PRODUCT_VARIANT_AGGREGATE}
      FROM products p
      ${PRODUCT_JOINS}
-     LEFT JOIN product_variants pv ON pv.product_id = p.id
-     LEFT JOIN colors vc           ON vc.id = pv.color_id
      WHERE p.slug = $1
        AND p.status = 'published'
        AND p.deleted_at IS NULL
@@ -319,6 +319,75 @@ function rowToAdminProduct(row: Record<string, unknown>): AdminProduct {
   };
 }
 
+async function getProductOptions(client: PoolClient, productId: string): Promise<Pick<AdminProductDetails, 'colors' | 'materials' | 'sizes'>> {
+  const result = await client.query(
+    `SELECT
+       COALESCE((SELECT json_agg(jsonb_build_object('id', c.id, 'name', c.name, 'hex_code', c.hex_code) ORDER BY c.name)
+                 FROM product_colors pc JOIN colors c ON c.id = pc.color_id
+                 WHERE pc.product_id = $1 AND c.is_active = true), '[]') AS colors,
+       COALESCE((SELECT json_agg(jsonb_build_object('id', m.id, 'name', m.name) ORDER BY m.name)
+                 FROM product_materials pm JOIN materials m ON m.id = pm.material_id
+                 WHERE pm.product_id = $1 AND m.is_active = true), '[]') AS materials,
+       COALESCE((SELECT json_agg(s.value ORDER BY s.value)
+                 FROM product_sizes ps JOIN sizes s ON s.id = ps.size_id
+                 WHERE ps.product_id = $1 AND s.is_active = true), '[]') AS sizes`,
+    [productId],
+  );
+  const row = result.rows[0] as Record<string, unknown>;
+  const colors = parseJsonAgg<ColorRef>(row['colors']).map((color) => ({
+    id: color['id' as keyof typeof color] as unknown as string,
+    name: color['name' as keyof typeof color] as unknown as string,
+    hexCode: (color['hex_code' as keyof typeof color] as unknown as string | null) ?? null,
+    hex: (color['hex_code' as keyof typeof color] as unknown as string | null) ?? null,
+  }));
+  const materials = parseJsonAgg<MaterialRef>(row['materials']).map((material) => ({
+    id: material['id' as keyof typeof material] as unknown as string,
+    name: material['name' as keyof typeof material] as unknown as string,
+  }));
+  return { colors, materials, sizes: parseJsonAgg<number | string>(row['sizes']).map(Number) };
+}
+
+async function replaceProductOptions(
+  client: PoolClient,
+  productId: string,
+  input: Pick<UpdateProductInput, 'colors' | 'materials' | 'sizes'>,
+): Promise<void> {
+  if (input.colors !== undefined) {
+    await client.query('DELETE FROM product_colors WHERE product_id = $1', [productId]);
+    for (const color of input.colors) {
+      const result = await client.query(
+        `INSERT INTO colors (name, hex_code, is_active) VALUES ($1, $2, true)
+         ON CONFLICT (name) DO UPDATE SET hex_code = COALESCE(colors.hex_code, EXCLUDED.hex_code), is_active = true
+         RETURNING id`,
+        [color.name, color.hex],
+      );
+      await client.query('INSERT INTO product_colors (product_id, color_id) VALUES ($1, $2)', [productId, (result.rows[0] as Record<string, unknown>)['id']]);
+    }
+  }
+  if (input.materials !== undefined) {
+    await client.query('DELETE FROM product_materials WHERE product_id = $1', [productId]);
+    for (const material of input.materials) {
+      const result = await client.query(
+        `INSERT INTO materials (name, is_active) VALUES ($1, true)
+         ON CONFLICT (name) DO UPDATE SET is_active = true RETURNING id`,
+        [material.name],
+      );
+      await client.query('INSERT INTO product_materials (product_id, material_id) VALUES ($1, $2)', [productId, (result.rows[0] as Record<string, unknown>)['id']]);
+    }
+  }
+  if (input.sizes !== undefined) {
+    await client.query('DELETE FROM product_sizes WHERE product_id = $1', [productId]);
+    for (const size of input.sizes) {
+      const result = await client.query(
+        `INSERT INTO sizes (value, is_active) VALUES ($1, true)
+         ON CONFLICT (value) DO UPDATE SET is_active = true RETURNING id`,
+        [size],
+      );
+      await client.query('INSERT INTO product_sizes (product_id, size_id) VALUES ($1, $2)', [productId, (result.rows[0] as Record<string, unknown>)['id']]);
+    }
+  }
+}
+
 function rowToManagedProductImage(row: Record<string, unknown>): ManagedProductImage {
   return {
     id: row['id'] as string,
@@ -330,52 +399,81 @@ function rowToManagedProductImage(row: Record<string, unknown>): ManagedProductI
   };
 }
 
-export async function createProduct(input: CreateProductInput): Promise<AdminProduct> {
-  const result = await pool.query(
-    `INSERT INTO products
-       (name, slug, description, category, gender, base_price, is_customizable, status, is_featured, is_hero)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
-               is_featured, is_hero, created_at, updated_at`,
-    [
-      input.name,
-      input.slug,
-      input.description,
-      input.category ?? null,
-      input.gender ?? null,
-      input.basePrice,
-      input.isCustomizable,
-      input.status,
-      input.isFeatured,
-      input.isHero,
-    ],
-  );
-  return rowToAdminProduct(result.rows[0] as Record<string, unknown>);
+export async function createProduct(input: CreateProductInput): Promise<AdminProductDetails> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `INSERT INTO products
+         (name, slug, description, category, gender, base_price, is_customizable, status, is_featured, is_hero)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
+                 is_featured, is_hero, created_at, updated_at`,
+      [
+        input.name, input.slug, input.description, input.category ?? null, input.gender ?? null,
+        input.basePrice, input.isCustomizable, input.status, input.isFeatured, input.isHero,
+      ],
+    );
+    const product = result.rows[0] as Record<string, unknown>;
+    const productId = product['id'] as string;
+
+    await replaceProductOptions(client, productId, {
+      colors: input.colors ?? [], materials: input.materials ?? [], sizes: input.sizes ?? [],
+    });
+
+    const response = { ...rowToAdminProduct(product), ...(await getProductOptions(client, productId)) };
+    await client.query('COMMIT');
+    return response;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateProductById(
   id: string,
   input: UpdateProductInput,
-): Promise<AdminProduct | null> {
-  const fieldMap: Record<keyof UpdateProductInput, string> = {
+): Promise<AdminProductDetails | null> {
+  const fieldMap: Record<Exclude<keyof UpdateProductInput, 'colors' | 'materials' | 'sizes'>, string> = {
     name: 'name', slug: 'slug', description: 'description', category: 'category', gender: 'gender', basePrice: 'base_price',
     isCustomizable: 'is_customizable', status: 'status', isFeatured: 'is_featured', isHero: 'is_hero',
   };
   const entries = (Object.entries(input) as [keyof UpdateProductInput, unknown][])
-    .filter(([, value]) => value !== undefined);
+    .filter(([key, value]) => value !== undefined && key in fieldMap) as [keyof typeof fieldMap, unknown][];
   const values = entries.map(([, value]) => value);
   const assignments = entries.map(([key], index) => `${fieldMap[key]} = $${index + 1}`);
-
-  const result = await pool.query(
-    `UPDATE products
-     SET ${assignments.join(', ')}
-     WHERE id = $${values.length + 1} AND deleted_at IS NULL
-     RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
-               is_featured, is_hero, created_at, updated_at`,
-    [...values, id],
-  );
-  if (result.rows.length === 0) return null;
-  return rowToAdminProduct(result.rows[0] as Record<string, unknown>);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = assignments.length > 0
+      ? await client.query(
+        `UPDATE products SET ${assignments.join(', ')}
+         WHERE id = $${values.length + 1} AND deleted_at IS NULL
+         RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
+                   is_featured, is_hero, created_at, updated_at`,
+        [...values, id],
+      )
+      : await client.query(
+        `UPDATE products SET updated_at = now()
+         WHERE id = $1 AND deleted_at IS NULL
+         RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
+                   is_featured, is_hero, created_at, updated_at`,
+        [id],
+      );
+    if (result.rows.length === 0) { await client.query('ROLLBACK'); return null; }
+    await replaceProductOptions(client, id, input);
+    const product = rowToAdminProduct(result.rows[0] as Record<string, unknown>);
+    const options = await getProductOptions(client, id);
+    await client.query('COMMIT');
+    return { ...product, ...options };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function softDeleteProductById(id: string): Promise<boolean> {

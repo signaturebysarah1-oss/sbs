@@ -24,14 +24,22 @@ export async function submitQuote(
   profileId: string | null,
   input: CreateQuoteInput,
 ): Promise<QuoteRequest> {
-  const quoteId = await createQuoteWithItems({
-    profileId,
-    guestName: profileId ? null : input.guestName ?? null,
-    guestEmail: profileId ? null : input.guestEmail ?? null,
-    guestPhone: profileId ? null : input.guestPhone ?? null,
-    customerNotes: input.customerNotes ?? null,
-    items: input.items,
-  });
+  let quoteId: string;
+  try {
+    quoteId = await createQuoteWithItems({
+      profileId,
+      guestName: profileId ? null : input.guestName ?? null,
+      guestEmail: profileId ? null : input.guestEmail ?? null,
+      guestPhone: profileId ? null : input.guestPhone ?? null,
+      customerNotes: input.customerNotes ?? null,
+      items: input.items,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Selected size ')) {
+      throw AppError.badRequest('Selected size is not available for the product');
+    }
+    throw error;
+  }
 
   const quote = profileId
     ? await findQuoteByIdAndProfileId(quoteId, profileId)

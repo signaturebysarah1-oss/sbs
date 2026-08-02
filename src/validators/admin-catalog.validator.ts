@@ -13,10 +13,38 @@ const productFields = {
   status: catalogStatusSchema,
   isFeatured: z.boolean(),
   isHero: z.boolean(),
+  colors: z.array(z.object({
+    name: z.string().trim().min(1, 'color name is required').max(255),
+    hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'color hex must be a #RRGGBB value'),
+  })).max(100).optional(),
+  materials: z.array(z.object({
+    name: z.string().trim().min(1, 'material name is required').max(255),
+  })).max(100).optional(),
+  sizes: z.array(z.number().min(0).max(999.99)).max(100).optional(),
 };
 
-export const createProductSchema = z.object(productFields);
-export const updateProductSchema = z.object(productFields).partial().refine(
+export const createProductSchema = z.object(productFields).superRefine((data, ctx) => {
+  if (data.colors && new Set(data.colors.map((color) => color.name.toLowerCase())).size !== data.colors.length) {
+    ctx.addIssue({ code: 'custom', message: 'colors must not contain duplicate names', path: ['colors'] });
+  }
+  if (data.materials && new Set(data.materials.map((material) => material.name.toLowerCase())).size !== data.materials.length) {
+    ctx.addIssue({ code: 'custom', message: 'materials must not contain duplicate names', path: ['materials'] });
+  }
+  if (data.sizes && new Set(data.sizes).size !== data.sizes.length) {
+    ctx.addIssue({ code: 'custom', message: 'sizes must not contain duplicate values', path: ['sizes'] });
+  }
+});
+export const updateProductSchema = z.object(productFields).partial().superRefine((data, ctx) => {
+  if (data.colors && new Set(data.colors.map((color) => color.name.toLowerCase())).size !== data.colors.length) {
+    ctx.addIssue({ code: 'custom', message: 'colors must not contain duplicate names', path: ['colors'] });
+  }
+  if (data.materials && new Set(data.materials.map((material) => material.name.toLowerCase())).size !== data.materials.length) {
+    ctx.addIssue({ code: 'custom', message: 'materials must not contain duplicate names', path: ['materials'] });
+  }
+  if (data.sizes && new Set(data.sizes).size !== data.sizes.length) {
+    ctx.addIssue({ code: 'custom', message: 'sizes must not contain duplicate values', path: ['sizes'] });
+  }
+}).refine(
   (data) => Object.keys(data).length > 0,
   'At least one product field is required',
 );

@@ -19,6 +19,7 @@ import { AppError } from '../utils/AppError.js';
 import type { Product, ProductSummary } from '../types/catalog.types.js';
 import type {
   AdminProduct,
+  AdminProductDetails,
   CreateProductImageInput,
   CreateProductInput,
   ManagedProductImage,
@@ -46,14 +47,14 @@ export async function getHeroProducts(): Promise<ProductSummary[]> {
   return findHeroProducts();
 }
 
-export async function createManagedProduct(input: CreateProductInput): Promise<AdminProduct> {
+export async function createManagedProduct(input: CreateProductInput): Promise<AdminProductDetails> {
   return createProduct(input);
 }
 
 export async function updateManagedProduct(
   id: string,
   input: UpdateProductInput,
-): Promise<AdminProduct> {
+): Promise<AdminProductDetails> {
   const product = await updateProductById(id, input);
   if (!product) throw AppError.notFound('Product not found');
   return product;

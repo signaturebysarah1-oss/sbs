@@ -13,8 +13,8 @@ export async function getMyCart(profileId: string): Promise<Cart> {
 }
 
 export async function addItemToCart(profileId: string, input: AddCartItemInput): Promise<Cart> {
-  const cart = await addCartItem(profileId, input.productId, input.variantId ?? null, input.quantity);
-  if (!cart) throw AppError.notFound('Product or variant not found');
+  const cart = await addCartItem(profileId, input);
+  if (!cart) throw AppError.notFound('Product, variant, color, material, or size not found');
   return cart;
 }
 
