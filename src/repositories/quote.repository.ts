@@ -62,6 +62,25 @@ function rowToAdminSummary(row: Record<string, unknown>): QuoteRequestAdminSumma
 
 // ─── Reference number generation ─────────────────────────────────────────────
 
+// ─── Pending draft lookup ────────────────────────────────────────────────────
+
+// Returns the ID of the customer's current pending draft, or null if none exists.
+// Used by the service to implement the one-active-draft rule.
+export async function findPendingDraftByProfileId(
+  profileId: string,
+): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT id FROM quote_requests
+     WHERE profile_id = $1
+       AND customer_status = 'pending'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [profileId],
+  );
+  if (result.rows.length === 0) return null;
+  return (result.rows[0] as Record<string, unknown>)['id'] as string;
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createQuoteWithItems(data: {
@@ -76,22 +95,6 @@ export async function createQuoteWithItems(data: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    // Explicit quote sizes are product-level choices. Legacy variant label
-    // snapshots remain untouched for backwards compatibility.
-    for (const item of data.items) {
-      if (item.size === null || item.size === undefined) continue;
-      const sizeResult = await client.query(
-        `SELECT 1
-         FROM product_sizes ps
-         JOIN sizes s ON s.id = ps.size_id
-         WHERE ps.product_id = $1 AND s.value = $2 AND s.is_active = true`,
-        [item.productId, item.size],
-      );
-      if (sizeResult.rows.length === 0) {
-        throw new Error(`Selected size ${item.size} is not available for product ${item.productId}`);
-      }
-    }
 
     // Serialize number allocation per year so concurrent submissions cannot
     // receive the same unique SBS-YYYY-NNNNN reference number.
@@ -353,15 +356,6 @@ export async function updateCustomerQuoteWithItems(data: {
       throw new Error('Invalid customer quote status');
     }
     if (data.items !== undefined) {
-      for (const item of data.items) {
-        if (item.size === null || item.size === undefined) continue;
-        const size = await client.query(
-          `SELECT 1 FROM product_sizes ps JOIN sizes s ON s.id = ps.size_id
-           WHERE ps.product_id = $1 AND s.value = $2 AND s.is_active = true`,
-          [item.productId, item.size],
-        );
-        if (size.rows.length === 0) throw new Error(`Selected size ${item.size} is not available for product ${item.productId}`);
-      }
       await client.query('DELETE FROM quote_items WHERE quote_request_id = $1', [data.quoteId]);
       for (const item of data.items) {
         await client.query(

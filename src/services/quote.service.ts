@@ -7,6 +7,7 @@ import {
   findQuoteCurrentStatus,
   updateQuoteStatus,
   updateCustomerQuoteWithItems,
+  findPendingDraftByProfileId,
 } from '../repositories/quote.repository.js';
 import { AppError } from '../utils/AppError.js';
 import type {
@@ -22,30 +23,59 @@ import type {
 
 // ─── Customer ─────────────────────────────────────────────────────────────────
 
+// One-active-draft rule:
+// Authenticated customers have at most one pending draft at a time.
+// POST /api/quotes merges into the existing draft when one exists,
+// and only creates a new record when none does.
+// Guests always create a new quote (no profile to look up a draft against).
 export async function submitQuote(
   profileId: string | null,
   input: CreateQuoteInput,
 ): Promise<QuoteRequest> {
-  let quoteId: string;
-  try {
-    quoteId = await createQuoteWithItems({
-      profileId,
-      guestName: profileId ? null : input.guestName ?? null,
-      guestEmail: profileId ? null : input.guestEmail ?? null,
-      guestPhone: profileId ? null : input.guestPhone ?? null,
-      customerNotes: input.customerNotes ?? null,
-      items: input.items,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Selected size ')) {
-      throw AppError.badRequest('Selected size is not available for the product');
+  if (!profileId) {
+    if (!input.guestName || !input.guestEmail) {
+      throw AppError.badRequest('guestName and guestEmail are required for guest quotes');
     }
-    throw error;
+    const quoteId = await createQuoteWithItems({
+      profileId: null,
+      guestName: input.guestName,
+      guestEmail: input.guestEmail,
+      guestPhone: input.guestPhone ?? null,
+      customerNotes: input.customerNotes ?? null,
+      items: input.items ?? [],
+    });
+    const quote = await findQuoteByIdAdmin(quoteId);
+    if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
+    return quote;
   }
 
-  const quote = profileId
-    ? await findQuoteByIdAndProfileId(quoteId, profileId)
-    : await findQuoteByIdAdmin(quoteId);
+  // Check for an existing pending draft.
+  const existingDraftId = await findPendingDraftByProfileId(profileId);
+
+  if (existingDraftId) {
+    // Merge into the existing draft — do not create a new record.
+    await updateCustomerQuoteWithItems({
+      quoteId: existingDraftId,
+      profileId,
+      customerNotes: input.customerNotes,
+      items: input.items,
+    });
+    const quote = await findQuoteByIdAndProfileId(existingDraftId, profileId);
+    if (!quote) throw new AppError('Draft quote could not be retrieved', 500);
+    return quote;
+  }
+
+  // No pending draft — create a new one.
+  const quoteId = await createQuoteWithItems({
+    profileId,
+    guestName: null,
+    guestEmail: null,
+    guestPhone: null,
+    customerNotes: input.customerNotes ?? null,
+    items: input.items ?? [],
+  });
+
+  const quote = await findQuoteByIdAndProfileId(quoteId, profileId);
   if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
   return quote;
 }
@@ -72,9 +102,6 @@ export async function updateMyQuote(
     const updated = await updateCustomerQuoteWithItems({ quoteId: id, profileId, ...input });
     if (!updated) throw AppError.notFound('Quote not found');
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Selected size ')) {
-      throw AppError.badRequest('Selected size is not available for the product');
-    }
     if (error instanceof Error && error.message === 'Customer quote is already completed') {
       throw AppError.badRequest('Completed customer quotes cannot be updated');
     }

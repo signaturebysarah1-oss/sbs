@@ -9,7 +9,7 @@ export type CustomerQuoteStatus = (typeof CUSTOMER_QUOTE_STATUSES)[number];
 // ─── Submission input (validated by Zod before reaching service) ──────────────
 
 export interface QuoteItemInput {
-  productId: string;
+  productId: string | null;   // null = fully custom shoe with no product record
   productNameSnapshot?: string | null;
   imageUrlSnapshot?: string | null;
   shoeNameSnapshot?: string | null;
@@ -29,7 +29,7 @@ export interface CreateQuoteInput {
   guestEmail?: string;
   guestPhone?: string;
   customerNotes?: string | null;
-  items: QuoteItemInput[];
+  items?: QuoteItemInput[];   // optional — customer may create an empty draft first
 }
 
 export interface UpdateCustomerQuoteInput {

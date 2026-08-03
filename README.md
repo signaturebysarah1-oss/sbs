@@ -60,11 +60,9 @@ npm run build
 ### Database migrations
 
 Apply the SQL files in `src/database/migrations` in numeric order to a new
-database. Existing deployments should apply migrations in order through
-`007_nullable_quote_item_snapshots.sql`.
-It adds the homepage, collection-feature, product-gender, and reusable
-customization catalogue schema without replacing the existing product,
-collection, quote, cart, or favorite tables.
+database. Existing deployments should apply only the new migration:
+`008_one_pending_draft_per_customer.sql` — adds the partial unique index that
+enforces one active draft per authenticated customer at the database level.
 
 ### Production
 
@@ -215,7 +213,7 @@ Create a product:
 
 `category` is an optional free-form label (for example, `Shoes`, `Bags`, `Belts`, `Wallets`, or `Accessories`) and is separate from collections. `status` is one of `draft`, `published`, or `archived`. Product updates accept any non-empty subset of the same fields, including `category`.
 
-`gender` is optional and can be `male`, `female`, or `unisex`. Valid product sort values are `newest`, `price_asc`, and `price_desc`. Color filtering uses an exact hex code (for example `%23111111`); `collection` and `material` use their slugs (for example `mens-shoes` and `full-grain-leather`); `size` uses the numeric size value. Material objects in product and material responses include `id`, `name`, and `slug`.
+`gender` is optional and can be `male`, `female`, or `unisex`. Valid product sort values are `newest`, `price_asc`, `price_desc`, `size_asc`, `size_desc`, and `collection_sort`. `size_asc` and `size_desc` order products by their minimum and maximum assigned size respectively; products with no sizes sort last. `collection_sort` orders products by their `sort_order` within the filtered collection. Color filtering uses an exact hex code (for example `%23111111`); `collection` and `material` use their slugs (for example `mens-shoes` and `full-grain-leather`); `size` uses the numeric size value. Material objects in product and material responses include `id`, `name`, and `slug`.
 
 `colors`, `materials`, and `sizes` are optional create/update fields. Supplying one replaces that product's corresponding availability list in the same transaction. The API creates or reuses the necessary catalog records; no prior catalog request is needed. Sizes are stored through `sizes` and `product_sizes`, independently of legacy product variants. All product list and detail responses include `colors`, `materials`, and `sizes`; color objects expose both `hex` and `hexCode`.
 
@@ -431,9 +429,43 @@ Submit a guest quote:
 }
 ```
 
-All quote-item snapshot and customisation fields are optional and nullable: `productNameSnapshot`, `variantLabelSnapshot`, `materialNameSnapshot`, `colorNameSnapshot`, `imageUrlSnapshot`, `shoeNameSnapshot`, `toeStyleSnapshot`, `size`, `customMeasurements`, `customNotes`, and `unitPriceSnapshot`. This allows a customer to save a partially configured item. When a value is supplied it is stored as an immutable snapshot; omitted or `null` values are stored as `null`, not placeholder strings. `size` is stored directly and, when supplied, must be an active size assigned to that product through `product_sizes`. Legacy `productName`, `material`, and `color` input aliases remain supported for compatibility.
+All quote-item snapshot and customisation fields are optional and nullable: `productNameSnapshot`, `variantLabelSnapshot`, `materialNameSnapshot`, `colorNameSnapshot`, `imageUrlSnapshot`, `shoeNameSnapshot`, `toeStyleSnapshot`, `size`, `customMeasurements`, `customNotes`, and `unitPriceSnapshot`. This allows a customer to save a partially configured item. When a value is supplied it is stored as an immutable snapshot; omitted or `null` values are stored as `null`, not placeholder strings. `productId` is also nullable — a fully custom shoe that does not correspond to any product record can be quoted by omitting or setting `productId` to `null`. Legacy `productName`, `material`, and `color` input aliases remain supported for compatibility.
 
-New quotes have two independent lifecycle fields: `status` is the existing admin workflow (`pending`, `reviewing`, `approved`, `completed`, or `cancelled`), while `customerStatus` tracks customer submission and starts as `pending`. A customer submits their built quote by updating `customerStatus` to `completed`; this does not alter the admin status. The migration marks historical quotes as customer-completed because they were created through the prior immediate-submission endpoint. Completed customer quotes cannot be edited.
+New quotes have two independent lifecycle fields: `status` is the admin workflow (`pending`, `reviewing`, `approved`, `completed`, or `cancelled`), while `customerStatus` tracks customer submission and starts as `pending`.
+
+### Active quote draft lifecycle
+
+Authenticated customers have **one active draft** at a time:
+
+```
+Customer calls POST /api/quotes
+  ↓
+If a pending draft exists → merge items/notes into it (no new record)
+If no pending draft exists → create a new quote with customerStatus = pending
+  ↓
+Customer calls PATCH /api/quotes/:id to add, remove, or update items
+  ↓
+Customer sets customerStatus = completed to submit the draft
+  ↓
+Completed quote enters history — cannot be edited
+  ↓
+Customer may now create a new pending draft
+```
+
+This is enforced at both the application layer and the database layer via a partial unique index on `(profile_id) WHERE customer_status = 'pending'`.
+
+### customerStatus vs status
+
+| Field | Controlled by | Values | Purpose |
+| --- | --- | --- | --- |
+| `customerStatus` | Customer | `pending`, `completed` | Tracks whether the customer has finished building and submitted their draft. |
+| `status` | Admin | `pending`, `reviewing`, `approved`, `completed`, `cancelled` | Admin review workflow. Independent of `customerStatus`. |
+
+Setting `customerStatus = completed` does **not** change the admin `status`. The admin workflow begins after the customer submits.
+
+### Nullable productId
+
+`productId` on a quote item is optional and nullable. A customer building a fully custom shoe — with custom measurements, materials, and notes but no matching product in the catalogue — can submit a quote item with `productId: null`. The snapshot fields capture all relevant details.
 
 Update a customer quote:
 

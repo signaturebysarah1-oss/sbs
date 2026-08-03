@@ -28,7 +28,7 @@ export interface ProductFilter {
   gender?: 'male' | 'female' | 'unisex';
   size?: string;
   material?: string;
-  sort?: 'newest' | 'price_asc' | 'price_desc';
+  sort?: 'newest' | 'price_asc' | 'price_desc' | 'size_asc' | 'size_desc' | 'collection_sort';
 }
 
 // ─── Row mappers ──────────────────────────────────────────────────────────────
@@ -204,12 +204,19 @@ export async function findPublishedProducts(filters: ProductFilter = {}): Promis
   if (filters.category) add('p.category ILIKE ?', filters.category);
   if (filters.gender) add('p.gender = ?', filters.gender);
   if (filters.color) add(`EXISTS (SELECT 1 FROM product_colors fpc JOIN colors fc ON fc.id = fpc.color_id WHERE fpc.product_id = p.id AND fc.hex_code = ?)`, filters.color);
-  if (filters.size) add(`EXISTS (SELECT 1 FROM product_sizes fps JOIN sizes fs ON fs.id = fps.size_id WHERE fps.product_id = p.id AND fs.value::text = ?)`, filters.size);
+  if (filters.size) add(`EXISTS (SELECT 1 FROM product_sizes fps JOIN sizes fs ON fs.id = fps.size_id WHERE fps.product_id = p.id AND fs.value = ?::numeric AND fs.is_active = true)`, filters.size);
   if (filters.material) add(`EXISTS (SELECT 1 FROM product_materials fpm JOIN materials fm ON fm.id = fpm.material_id WHERE fpm.product_id = p.id AND lower(fm.slug) = lower(?))`, filters.material);
   if (filters.collection) add(`EXISTS (SELECT 1 FROM product_collections fpc JOIN collections fc ON fc.id = fpc.collection_id WHERE fpc.product_id = p.id AND fc.slug = ?)`, filters.collection);
-  const orderBy = filters.sort === 'newest' ? 'p.created_at DESC, p.id DESC'
-    : filters.sort === 'price_asc' ? 'p.base_price ASC, p.name ASC'
-    : filters.sort === 'price_desc' ? 'p.base_price DESC, p.name ASC'
+  // size_asc / size_desc: order by the minimum size assigned to each product.
+  // Products with no sizes sort last (NULLS LAST).
+  // collection_sort: order by the product's sort_order within its collection(s).
+  // When multiple collections match, the lowest sort_order wins.
+  const orderBy = filters.sort === 'newest'       ? 'p.created_at DESC, p.id DESC'
+    : filters.sort === 'price_asc'                ? 'p.base_price ASC, p.name ASC'
+    : filters.sort === 'price_desc'               ? 'p.base_price DESC, p.name ASC'
+    : filters.sort === 'size_asc'                 ? '(SELECT MIN(s2.value) FROM product_sizes ps2 JOIN sizes s2 ON s2.id = ps2.size_id WHERE ps2.product_id = p.id AND s2.is_active = true) ASC NULLS LAST, p.name ASC'
+    : filters.sort === 'size_desc'                ? '(SELECT MAX(s2.value) FROM product_sizes ps2 JOIN sizes s2 ON s2.id = ps2.size_id WHERE ps2.product_id = p.id AND s2.is_active = true) DESC NULLS LAST, p.name ASC'
+    : filters.sort === 'collection_sort'          ? 'MIN(pc.sort_order) ASC NULLS LAST, p.sort_order ASC, p.name ASC'
     : 'p.sort_order ASC, p.name ASC';
   const result = await pool.query(
     `SELECT

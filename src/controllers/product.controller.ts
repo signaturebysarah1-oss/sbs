@@ -15,6 +15,7 @@ import {
   removeManagedProductVariant,
   updateManagedProductVariant,
 } from '../services/product.service.js';
+import type { ProductFilter } from '../repositories/product.repository.js';
 import { sendSuccess } from '../utils/response.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
@@ -36,10 +37,10 @@ export async function listProducts(
     const query = req.query;
     const getString = (key: string): string | undefined => typeof query[key] === 'string' ? query[key] : undefined;
     const sort = getString('sort');
-    if (sort && !['newest', 'price_asc', 'price_desc'].includes(sort)) throw AppError.badRequest('sort must be newest, price_asc, or price_desc');
+    if (sort && !['newest', 'price_asc', 'price_desc', 'size_asc', 'size_desc', 'collection_sort'].includes(sort)) throw AppError.badRequest('sort must be newest, price_asc, price_desc, size_asc, size_desc, or collection_sort');
     const gender = getString('gender');
     if (gender && !['male', 'female', 'unisex'].includes(gender)) throw AppError.badRequest('gender must be male, female, or unisex');
-    const products = await getAllProducts({ color: getString('color'), collection: getString('collection'), category: getString('category'), size: getString('size'), material: getString('material'), gender: gender as 'male' | 'female' | 'unisex' | undefined, sort: sort as 'newest' | 'price_asc' | 'price_desc' | undefined });
+    const products = await getAllProducts({ color: getString('color'), collection: getString('collection'), category: getString('category'), size: getString('size'), material: getString('material'), gender: gender as 'male' | 'female' | 'unisex' | undefined, sort: sort as ProductFilter['sort'] });
     sendSuccess(res, 'Products retrieved', products);
   } catch (err) {
     next(err);
