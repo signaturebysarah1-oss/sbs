@@ -8,8 +8,9 @@ import {
   getAllQuotesAdmin,
   getQuoteByIdAdmin,
   changeQuoteStatus,
+  updateMyQuote as updateCustomerQuote,
 } from '../services/quote.service.js';
-import { createQuoteSchema, updateQuoteStatusSchema } from '../validators/quote.validator.js';
+import { createQuoteSchema, updateCustomerQuoteSchema, updateQuoteStatusSchema } from '../validators/quote.validator.js';
 import { sendSuccess } from '../utils/response.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
@@ -69,6 +70,24 @@ export async function getMyQuote(
     const user = resolvedUser(req);
     const quote = await getMyQuoteById(req.params['id'] as string, user.id);
     sendSuccess(res, 'Quote retrieved', quote);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateMyQuote(
+  req: MaybeAuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const user = resolvedUser(req);
+    const parsed = updateCustomerQuoteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const quote = await updateCustomerQuote(req.params['id'] as string, user.id, parsed.data);
+    sendSuccess(res, 'Quote updated', quote);
   } catch (err) {
     next(err);
   }

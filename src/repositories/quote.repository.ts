@@ -7,6 +7,7 @@ import type {
   QuoteItem,
   QuoteStatus,
   QuoteItemInput,
+  CustomerQuoteStatus,
 } from '../types/quote.types.js';
 import { findStatusHistoryByQuoteId } from './quote-status.repository.js';
 
@@ -16,12 +17,16 @@ function rowToQuoteItem(row: Record<string, unknown>): QuoteItem {
   return {
     id: row['id'] as string,
     productId: (row['product_id'] as string | null) ?? null,
-    productNameSnapshot: row['product_name_snapshot'] as string,
+    productNameSnapshot: (row['product_name_snapshot'] as string | null) ?? null,
+    imageUrlSnapshot: (row['image_url_snapshot'] as string | null) ?? null,
+    shoeNameSnapshot: (row['shoe_name_snapshot'] as string | null) ?? null,
+    toeStyleSnapshot: (row['toe_style_snapshot'] as string | null) ?? null,
+    size: row['size'] == null ? null : parseFloat(row['size'] as string),
     variantLabelSnapshot: (row['variant_label_snapshot'] as string | null) ?? null,
     materialNameSnapshot: (row['material_name_snapshot'] as string | null) ?? null,
     colorNameSnapshot: (row['color_name_snapshot'] as string | null) ?? null,
     quantity: row['quantity'] as number,
-    unitPriceSnapshot: parseFloat(row['unit_price_snapshot'] as string),
+    unitPriceSnapshot: row['unit_price_snapshot'] == null ? null : parseFloat(row['unit_price_snapshot'] as string),
     customMeasurements:
       (row['custom_measurements'] as Record<string, unknown> | null) ?? null,
     customNotes: (row['custom_notes'] as string | null) ?? null,
@@ -35,6 +40,7 @@ function rowToSummary(row: Record<string, unknown>): QuoteRequestSummary {
     referenceNumber: row['reference_number'] as string,
     profileId: (row['profile_id'] as string | null) ?? null,
     status: row['status'] as QuoteStatus,
+    customerStatus: row['customer_status'] as CustomerQuoteStatus,
     customerNotes: (row['customer_notes'] as string | null) ?? null,
     submittedAt: (row['submitted_at'] as Date).toISOString(),
     reviewedAt: row['reviewed_at'] ? (row['reviewed_at'] as Date).toISOString() : null,
@@ -105,8 +111,8 @@ export async function createQuoteWithItems(data: {
 
     const quoteResult = await client.query(
       `INSERT INTO quote_requests
-         (reference_number, profile_id, guest_name, guest_email, guest_phone, customer_notes, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+         (reference_number, profile_id, guest_name, guest_email, guest_phone, customer_notes, status, customer_status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'pending')
        RETURNING id`,
       [
         referenceNumber,
@@ -123,14 +129,18 @@ export async function createQuoteWithItems(data: {
     for (const item of data.items) {
       await client.query(
         `INSERT INTO quote_items
-           (quote_request_id, product_id, product_name_snapshot, variant_label_snapshot,
-            material_name_snapshot, color_name_snapshot, quantity,
+           (quote_request_id, product_id, product_name_snapshot, image_url_snapshot, shoe_name_snapshot, toe_style_snapshot, size,
+            variant_label_snapshot, material_name_snapshot, color_name_snapshot, quantity,
             unit_price_snapshot, custom_measurements, custom_notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           quoteId,
           item.productId,
           item.productNameSnapshot,
+          item.imageUrlSnapshot ?? null,
+          item.shoeNameSnapshot ?? null,
+          item.toeStyleSnapshot ?? null,
+          item.size ?? null,
           item.variantLabelSnapshot ?? null,
           item.materialNameSnapshot ?? null,
           item.colorNameSnapshot ?? null,
@@ -166,7 +176,7 @@ export async function findQuotesByProfileId(
 ): Promise<QuoteRequestSummary[]> {
   const result = await pool.query(
     `SELECT id, reference_number, profile_id, status, customer_notes,
-            submitted_at, reviewed_at, completed_at, created_at, updated_at
+            customer_status, submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests
      WHERE profile_id = $1
      ORDER BY created_at DESC`,
@@ -180,7 +190,7 @@ export async function findQuoteByIdAndProfileId(
   profileId: string,
 ): Promise<QuoteRequest | null> {
   const result = await pool.query(
-    `SELECT id, reference_number, profile_id, status, customer_notes,
+    `SELECT id, reference_number, profile_id, status, customer_status, customer_notes,
             submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests
      WHERE id = $1 AND profile_id = $2`,
@@ -214,7 +224,7 @@ export async function findAllQuotesAdmin(
 
   const result = await pool.query(
     `SELECT
-       qr.id, qr.reference_number, qr.profile_id, qr.status,
+       qr.id, qr.reference_number, qr.profile_id, qr.status, qr.customer_status,
        qr.customer_notes, qr.admin_notes,
        qr.submitted_at, qr.reviewed_at, qr.completed_at,
        qr.created_at, qr.updated_at,
@@ -234,7 +244,7 @@ export async function findAllQuotesAdmin(
 export async function findQuoteByIdAdmin(id: string): Promise<QuoteRequestAdmin | null> {
   const result = await pool.query(
     `SELECT
-       qr.id, qr.reference_number, qr.profile_id, qr.status,
+       qr.id, qr.reference_number, qr.profile_id, qr.status, qr.customer_status,
        qr.customer_notes, qr.admin_notes,
        qr.submitted_at, qr.reviewed_at, qr.completed_at,
        qr.created_at, qr.updated_at,
@@ -308,7 +318,7 @@ export async function findQuoteCurrentStatus(id: string): Promise<QuoteStatus | 
 
 async function findQuoteItemsByQuoteId(quoteRequestId: string): Promise<QuoteItem[]> {
   const result = await pool.query(
-    `SELECT id, product_id, product_name_snapshot, variant_label_snapshot,
+    `SELECT id, product_id, product_name_snapshot, image_url_snapshot, shoe_name_snapshot, toe_style_snapshot, size, variant_label_snapshot,
             material_name_snapshot, color_name_snapshot, quantity,
             unit_price_snapshot, custom_measurements, custom_notes, created_at
      FROM quote_items
@@ -317,4 +327,62 @@ async function findQuoteItemsByQuoteId(quoteRequestId: string): Promise<QuoteIte
     [quoteRequestId],
   );
   return (result.rows as Record<string, unknown>[]).map(rowToQuoteItem);
+}
+
+export async function updateCustomerQuoteWithItems(data: {
+  quoteId: string;
+  profileId: string;
+  customerNotes?: string | null;
+  customerStatus?: CustomerQuoteStatus;
+  items?: QuoteItemInput[];
+}): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const quote = await client.query(
+      `SELECT customer_status FROM quote_requests WHERE id = $1 AND profile_id = $2 FOR UPDATE`,
+      [data.quoteId, data.profileId],
+    );
+    if (quote.rows.length === 0) { await client.query('ROLLBACK'); return false; }
+    if ((quote.rows[0] as Record<string, unknown>)['customer_status'] !== 'pending') {
+      await client.query('ROLLBACK');
+      throw new Error('Customer quote is already completed');
+    }
+    if (data.customerStatus && data.customerStatus !== 'pending' && data.customerStatus !== 'completed') {
+      await client.query('ROLLBACK');
+      throw new Error('Invalid customer quote status');
+    }
+    if (data.items !== undefined) {
+      for (const item of data.items) {
+        if (item.size === null || item.size === undefined) continue;
+        const size = await client.query(
+          `SELECT 1 FROM product_sizes ps JOIN sizes s ON s.id = ps.size_id
+           WHERE ps.product_id = $1 AND s.value = $2 AND s.is_active = true`,
+          [item.productId, item.size],
+        );
+        if (size.rows.length === 0) throw new Error(`Selected size ${item.size} is not available for product ${item.productId}`);
+      }
+      await client.query('DELETE FROM quote_items WHERE quote_request_id = $1', [data.quoteId]);
+      for (const item of data.items) {
+        await client.query(
+          `INSERT INTO quote_items (quote_request_id, product_id, product_name_snapshot, image_url_snapshot, shoe_name_snapshot, toe_style_snapshot, size, variant_label_snapshot, material_name_snapshot, color_name_snapshot, quantity, unit_price_snapshot, custom_measurements, custom_notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [data.quoteId, item.productId, item.productNameSnapshot ?? null, item.imageUrlSnapshot ?? null, item.shoeNameSnapshot ?? null, item.toeStyleSnapshot ?? null, item.size ?? null, item.variantLabelSnapshot ?? null, item.materialNameSnapshot ?? null, item.colorNameSnapshot ?? null, item.quantity, item.unitPriceSnapshot ?? null, item.customMeasurements ? JSON.stringify(item.customMeasurements) : null, item.customNotes ?? null],
+        );
+      }
+    }
+    const result = await client.query(
+      `UPDATE quote_requests
+       SET customer_notes = CASE WHEN $1 THEN $2 ELSE customer_notes END,
+           customer_status = COALESCE($3, customer_status)
+       WHERE id = $4 AND profile_id = $5
+       RETURNING id`,
+      [data.customerNotes !== undefined, data.customerNotes ?? null, data.customerStatus ?? null, data.quoteId, data.profileId],
+    );
+    await client.query('COMMIT');
+    return result.rows.length > 0;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally { client.release(); }
 }

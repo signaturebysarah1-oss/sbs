@@ -5,6 +5,7 @@ function rowToMaterial(row: Record<string, unknown>): Material {
   return {
     id: row['id'] as string,
     name: row['name'] as string,
+    slug: row['slug'] as string,
     description: (row['description'] as string | null) ?? null,
     imageUrl: (row['image_url'] as string | null) ?? null,
   };
@@ -12,7 +13,7 @@ function rowToMaterial(row: Record<string, unknown>): Material {
 
 export async function findActiveMaterials(): Promise<Material[]> {
   const result = await pool.query(
-    `SELECT id, name, description, image_url
+    `SELECT id, name, slug, description, image_url
      FROM materials
      WHERE is_active = true
      ORDER BY name ASC`,

@@ -22,6 +22,7 @@ export interface CartItem {
   id: string;
   quantity: number;
   unitPriceSnapshot: number;
+  imageUrlSnapshot: string | null;
   createdAt: string;
   updatedAt: string;
   selectedColor: string | null;

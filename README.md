@@ -60,8 +60,8 @@ npm run build
 ### Database migrations
 
 Apply the SQL files in `src/database/migrations` in numeric order to a new
-database. Existing deployments should apply
-`004_homepage_and_customizations.sql` after migrations `001` through `003`.
+database. Existing deployments should apply migrations in order through
+`007_nullable_quote_item_snapshots.sql`.
 It adds the homepage, collection-feature, product-gender, and reusable
 customization catalogue schema without replacing the existing product,
 collection, quote, cart, or favorite tables.
@@ -169,7 +169,7 @@ Authentication labels:
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |
-| `GET` | `/api/products` | Public | Lists published, non-deleted products. Supports `color`, `category`, `gender`, `size`, `material`, and `sort` filters. |
+| `GET` | `/api/products` | Public | Lists published, non-deleted products. Supports `collection`, `color`, `category`, `gender`, `size`, `material`, and `sort` filters. |
 | `GET` | `/api/products/featured` | Public | Lists published featured products. |
 | `GET` | `/api/products/hero` | Public | Lists published hero products. |
 | `GET` | `/api/products/:slug` | Public | Returns one published product with `colors`, `materials`, and `sizes` catalog arrays. |
@@ -215,7 +215,7 @@ Create a product:
 
 `category` is an optional free-form label (for example, `Shoes`, `Bags`, `Belts`, `Wallets`, or `Accessories`) and is separate from collections. `status` is one of `draft`, `published`, or `archived`. Product updates accept any non-empty subset of the same fields, including `category`.
 
-`gender` is optional and can be `male`, `female`, or `unisex`. Valid product sort values are `newest`, `price_asc`, and `price_desc`. Color filtering uses an exact hex code (for example `%23111111`); material accepts its slugified name (for example `full-grain-leather`).
+`gender` is optional and can be `male`, `female`, or `unisex`. Valid product sort values are `newest`, `price_asc`, and `price_desc`. Color filtering uses an exact hex code (for example `%23111111`); `collection` and `material` use their slugs (for example `mens-shoes` and `full-grain-leather`); `size` uses the numeric size value. Material objects in product and material responses include `id`, `name`, and `slug`.
 
 `colors`, `materials`, and `sizes` are optional create/update fields. Supplying one replaces that product's corresponding availability list in the same transaction. The API creates or reuses the necessary catalog records; no prior catalog request is needed. Sizes are stored through `sizes` and `product_sizes`, independently of legacy product variants. All product list and detail responses include `colors`, `materials`, and `sizes`; color objects expose both `hex` and `hexCode`.
 
@@ -322,6 +322,8 @@ Categories and options use a reusable `active`/`inactive` status and `sortOrder`
 | `GET` | `/api/materials` | Public | Lists active materials. |
 | `GET` | `/api/colors` | Public | Lists active colors. |
 
+Material responses include `id`, `name`, `slug`, `description`, and `imageUrl`. The stable `slug` is the value accepted by `GET /api/products?material=...`.
+
 ## Gallery
 
 | Method | Route | Auth | Purpose / usage |
@@ -397,6 +399,7 @@ Submit an application:
 | `POST` | `/api/quotes` | Public; customer token optional | Submits a guest or authenticated quote. Guests must provide `guestName` and `guestEmail`. |
 | `GET` | `/api/quotes/my` | Customer token | Lists only the authenticated customer's quote history. |
 | `GET` | `/api/quotes/:id` | Customer token | Returns one quote owned by the authenticated customer, including items and status history. |
+| `PATCH` | `/api/quotes/:id` | Customer token | Updates an owned, still-pending customer quote. |
 | `GET` | `/api/admin/quotes` | Admin/Super Admin token | Lists all quotes. An optional `?status=` filter is supported. |
 | `GET` | `/api/admin/quotes/:id` | Admin/Super Admin token | Returns one quote with customer details, items, and status history. |
 | `PATCH` | `/api/admin/quotes/:id/status` | Admin/Super Admin token | Updates quote status and writes a history entry. |
@@ -413,6 +416,9 @@ Submit a guest quote:
     {
       "productId": "00000000-0000-0000-0000-000000000000",
       "productName": "Classic Leather Loafer",
+      "imageUrlSnapshot": "https://images.example.com/loafer.jpg",
+      "shoeNameSnapshot": "Classic Loafer",
+      "toeStyleSnapshot": "Round toe",
       "size": 42,
       "material": "Full Grain Leather",
       "color": "Brown",
@@ -425,7 +431,47 @@ Submit a guest quote:
 }
 ```
 
-`productName`, `color`, `material`, and `size` are saved in the existing quote snapshot fields. When `size` is supplied, it must be an active size assigned to that product through `product_sizes`. The prior `*Snapshot` field names remain supported for compatibility.
+All quote-item snapshot and customisation fields are optional and nullable: `productNameSnapshot`, `variantLabelSnapshot`, `materialNameSnapshot`, `colorNameSnapshot`, `imageUrlSnapshot`, `shoeNameSnapshot`, `toeStyleSnapshot`, `size`, `customMeasurements`, `customNotes`, and `unitPriceSnapshot`. This allows a customer to save a partially configured item. When a value is supplied it is stored as an immutable snapshot; omitted or `null` values are stored as `null`, not placeholder strings. `size` is stored directly and, when supplied, must be an active size assigned to that product through `product_sizes`. Legacy `productName`, `material`, and `color` input aliases remain supported for compatibility.
+
+New quotes have two independent lifecycle fields: `status` is the existing admin workflow (`pending`, `reviewing`, `approved`, `completed`, or `cancelled`), while `customerStatus` tracks customer submission and starts as `pending`. A customer submits their built quote by updating `customerStatus` to `completed`; this does not alter the admin status. The migration marks historical quotes as customer-completed because they were created through the prior immediate-submission endpoint. Completed customer quotes cannot be edited.
+
+Update a customer quote:
+
+```json
+{
+  "customerNotes": "Please use the darker leather.",
+  "customerStatus": "completed",
+  "items": [
+    {
+      "productId": "00000000-0000-0000-0000-000000000000",
+      "productNameSnapshot": "Classic Leather Loafer",
+      "imageUrlSnapshot": "https://images.example.com/loafer.jpg",
+      "shoeNameSnapshot": "Classic Loafer",
+      "toeStyleSnapshot": "Round toe",
+      "quantity": 2,
+      "unitPriceSnapshot": 85000
+    }
+  ]
+}
+```
+
+All fields are optional, but at least one must be supplied. When `items` is supplied it replaces the quote's item list, allowing additions, removals, and quantity changes in one request. Item snapshot fields are accepted directly and returned by the quote GET/PATCH responses. Admin-only fields, including admin notes and the admin workflow status, are not accepted.
+
+A draft item can therefore be created or updated before customisation is complete:
+
+```json
+{
+  "items": [
+    {
+      "productId": "00000000-0000-0000-0000-000000000000",
+      "quantity": 1,
+      "productNameSnapshot": null,
+      "imageUrlSnapshot": null,
+      "unitPriceSnapshot": null
+    }
+  ]
+}
+```
 
 For authenticated submissions, send a customer token; guest contact fields are not required. Quote statuses are `pending`, `reviewing`, `approved`, `completed`, and `cancelled`.
 
@@ -440,7 +486,7 @@ Update quote status:
 
 ## Cart
 
-Cart endpoints are authenticated-only. A cart belongs to the authenticated profile. Adding the same product, variant, color, material, and size combination increases its quantity instead of creating a duplicate. The current product/variant and option price is saved in the existing `unit_price_snapshot` field when the item is first added.
+Cart endpoints are authenticated-only. A cart belongs to the authenticated profile. Adding the same product, variant, color, material, and size combination increases its quantity instead of creating a duplicate. The current product/variant and option price is saved in the existing `unit_price_snapshot` field when the item is first added. The selected primary product image URL is also stored as `imageUrlSnapshot` on the cart item; this snapshot is returned directly and is not changed if product images are later updated.
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |

@@ -23,6 +23,7 @@ import type {
 
 export interface ProductFilter {
   color?: string;
+  collection?: string;
   category?: string;
   gender?: 'male' | 'female' | 'unisex';
   size?: string;
@@ -79,6 +80,7 @@ function rowToProductSummary(row: Record<string, unknown>): ProductSummary {
     materials: materials.map((m) => ({
       id: m['id' as keyof typeof m] as unknown as string,
       name: m['name' as keyof typeof m] as unknown as string,
+      slug: m['slug' as keyof typeof m] as unknown as string,
     })),
     colors: colors.map((col) => ({
       id: col['id' as keyof typeof col] as unknown as string,
@@ -142,7 +144,8 @@ const PRODUCT_AGGREGATES = `
   COALESCE(
     json_agg(DISTINCT jsonb_build_object(
       'id',   m.id,
-      'name', m.name
+      'name', m.name,
+      'slug', m.slug
     )) FILTER (WHERE m.id IS NOT NULL),
     '[]'
   ) AS materials,
@@ -202,7 +205,8 @@ export async function findPublishedProducts(filters: ProductFilter = {}): Promis
   if (filters.gender) add('p.gender = ?', filters.gender);
   if (filters.color) add(`EXISTS (SELECT 1 FROM product_colors fpc JOIN colors fc ON fc.id = fpc.color_id WHERE fpc.product_id = p.id AND fc.hex_code = ?)`, filters.color);
   if (filters.size) add(`EXISTS (SELECT 1 FROM product_sizes fps JOIN sizes fs ON fs.id = fps.size_id WHERE fps.product_id = p.id AND fs.value::text = ?)`, filters.size);
-  if (filters.material) add(`EXISTS (SELECT 1 FROM product_materials fpm JOIN materials fm ON fm.id = fpm.material_id WHERE fpm.product_id = p.id AND lower(regexp_replace(fm.name, '[^a-z0-9]+', '-', 'g')) = lower(?))`, filters.material);
+  if (filters.material) add(`EXISTS (SELECT 1 FROM product_materials fpm JOIN materials fm ON fm.id = fpm.material_id WHERE fpm.product_id = p.id AND lower(fm.slug) = lower(?))`, filters.material);
+  if (filters.collection) add(`EXISTS (SELECT 1 FROM product_collections fpc JOIN collections fc ON fc.id = fpc.collection_id WHERE fpc.product_id = p.id AND fc.slug = ?)`, filters.collection);
   const orderBy = filters.sort === 'newest' ? 'p.created_at DESC, p.id DESC'
     : filters.sort === 'price_asc' ? 'p.base_price ASC, p.name ASC'
     : filters.sort === 'price_desc' ? 'p.base_price DESC, p.name ASC'
@@ -325,7 +329,7 @@ async function getProductOptions(client: PoolClient, productId: string): Promise
        COALESCE((SELECT json_agg(jsonb_build_object('id', c.id, 'name', c.name, 'hex_code', c.hex_code) ORDER BY c.name)
                  FROM product_colors pc JOIN colors c ON c.id = pc.color_id
                  WHERE pc.product_id = $1 AND c.is_active = true), '[]') AS colors,
-       COALESCE((SELECT json_agg(jsonb_build_object('id', m.id, 'name', m.name) ORDER BY m.name)
+       COALESCE((SELECT json_agg(jsonb_build_object('id', m.id, 'name', m.name, 'slug', m.slug) ORDER BY m.name)
                  FROM product_materials pm JOIN materials m ON m.id = pm.material_id
                  WHERE pm.product_id = $1 AND m.is_active = true), '[]') AS materials,
        COALESCE((SELECT json_agg(s.value ORDER BY s.value)
@@ -343,6 +347,7 @@ async function getProductOptions(client: PoolClient, productId: string): Promise
   const materials = parseJsonAgg<MaterialRef>(row['materials']).map((material) => ({
     id: material['id' as keyof typeof material] as unknown as string,
     name: material['name' as keyof typeof material] as unknown as string,
+    slug: material['slug' as keyof typeof material] as unknown as string,
   }));
   return { colors, materials, sizes: parseJsonAgg<number | string>(row['sizes']).map(Number) };
 }
@@ -368,9 +373,9 @@ async function replaceProductOptions(
     await client.query('DELETE FROM product_materials WHERE product_id = $1', [productId]);
     for (const material of input.materials) {
       const result = await client.query(
-        `INSERT INTO materials (name, is_active) VALUES ($1, true)
+        `INSERT INTO materials (name, slug, is_active) VALUES ($1, $2, true)
          ON CONFLICT (name) DO UPDATE SET is_active = true RETURNING id`,
-        [material.name],
+        [material.name, material.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')],
       );
       await client.query('INSERT INTO product_materials (product_id, material_id) VALUES ($1, $2)', [productId, (result.rows[0] as Record<string, unknown>)['id']]);
     }

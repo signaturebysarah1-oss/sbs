@@ -21,6 +21,7 @@ function rowToCartItem(row: Record<string, unknown>): CartItem {
     id: row['id'] as string,
     quantity: row['quantity'] as number,
     unitPriceSnapshot: parseFloat(row['unit_price_snapshot'] as string),
+    imageUrlSnapshot: (row['image_url_snapshot'] as string | null) ?? null,
     createdAt: (row['created_at'] as Date).toISOString(),
     updatedAt: (row['updated_at'] as Date).toISOString(),
     selectedColor: (row['selected_color_name'] as string | null) ?? null,
@@ -48,7 +49,7 @@ function rowToCartItem(row: Record<string, unknown>): CartItem {
 }
 
 const CART_ITEMS_QUERY = `
-  SELECT ci.id, ci.quantity, ci.unit_price_snapshot, ci.created_at, ci.updated_at,
+  SELECT ci.id, ci.quantity, ci.unit_price_snapshot, ci.image_url_snapshot, ci.created_at, ci.updated_at,
          p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
          p.description AS product_description, p.category AS product_category,
          p.base_price AS product_base_price,
@@ -129,7 +130,8 @@ export async function addCartItem(
     const variantId = input.variantId ?? null;
 
     const productResult = await client.query(
-      `SELECT p.base_price, COALESCE(pv.price_adjustment, 0) AS variant_price_adjustment
+      `SELECT p.base_price, COALESCE(pv.price_adjustment, 0) AS variant_price_adjustment,
+              (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, sort_order ASC, created_at ASC LIMIT 1) AS image_url_snapshot
        FROM products p
        LEFT JOIN product_variants pv ON pv.id = $2 AND pv.product_id = p.id
        WHERE p.id = $1 AND p.deleted_at IS NULL
@@ -209,9 +211,9 @@ export async function addCartItem(
       );
     } else {
       await client.query(
-        `INSERT INTO cart_items (cart_id, product_id, variant_id, material_id, color_id, size_id, quantity, unit_price_snapshot)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [cartId, input.productId, variantId, materialId, colorId, sizeId, input.quantity, unitPrice],
+        `INSERT INTO cart_items (cart_id, product_id, variant_id, material_id, color_id, size_id, quantity, unit_price_snapshot, image_url_snapshot)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [cartId, input.productId, variantId, materialId, colorId, sizeId, input.quantity, unitPrice, (priceRow['image_url_snapshot'] as string | null) ?? null],
       );
     }
     await client.query('UPDATE carts SET updated_at = now() WHERE id = $1', [cartId]);

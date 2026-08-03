@@ -18,6 +18,7 @@ export interface CollectionRef {
 export interface MaterialRef {
   id: string;
   name: string;
+  slug: string;
 }
 
 export interface ColorRef {
@@ -88,6 +89,7 @@ export interface CollectionWithProducts extends Collection {
 export interface Material {
   id: string;
   name: string;
+  slug: string;
   description: string | null;
   imageUrl: string | null;
 }

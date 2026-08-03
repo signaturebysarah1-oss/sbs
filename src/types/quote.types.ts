@@ -3,17 +3,23 @@
 export const QUOTE_STATUSES = ['pending', 'reviewing', 'approved', 'completed', 'cancelled'] as const;
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 
+export const CUSTOMER_QUOTE_STATUSES = ['pending', 'completed'] as const;
+export type CustomerQuoteStatus = (typeof CUSTOMER_QUOTE_STATUSES)[number];
+
 // ─── Submission input (validated by Zod before reaching service) ──────────────
 
 export interface QuoteItemInput {
   productId: string;
-  productNameSnapshot: string;
+  productNameSnapshot?: string | null;
+  imageUrlSnapshot?: string | null;
+  shoeNameSnapshot?: string | null;
+  toeStyleSnapshot?: string | null;
   size?: number | null;
   variantLabelSnapshot?: string | null;
   materialNameSnapshot?: string | null;
   colorNameSnapshot?: string | null;
   quantity: number;
-  unitPriceSnapshot: number;
+  unitPriceSnapshot?: number | null;
   customMeasurements?: Record<string, unknown> | null;
   customNotes?: string | null;
 }
@@ -24,6 +30,12 @@ export interface CreateQuoteInput {
   guestPhone?: string;
   customerNotes?: string | null;
   items: QuoteItemInput[];
+}
+
+export interface UpdateCustomerQuoteInput {
+  customerNotes?: string | null;
+  items?: QuoteItemInput[];
+  customerStatus?: CustomerQuoteStatus;
 }
 
 // ─── Status update input ──────────────────────────────────────────────────────
@@ -48,12 +60,16 @@ export interface QuoteStatusHistoryEntry {
 export interface QuoteItem {
   id: string;
   productId: string | null;
-  productNameSnapshot: string;
+  productNameSnapshot: string | null;
+  imageUrlSnapshot: string | null;
+  shoeNameSnapshot: string | null;
+  toeStyleSnapshot: string | null;
+  size: number | null;
   variantLabelSnapshot: string | null;
   materialNameSnapshot: string | null;
   colorNameSnapshot: string | null;
   quantity: number;
-  unitPriceSnapshot: number;
+  unitPriceSnapshot: number | null;
   customMeasurements: Record<string, unknown> | null;
   customNotes: string | null;
   createdAt: string;
@@ -64,6 +80,7 @@ export interface QuoteRequest {
   referenceNumber: string;
   profileId: string | null;
   status: QuoteStatus;
+  customerStatus: CustomerQuoteStatus;
   customerNotes: string | null;
   submittedAt: string;
   reviewedAt: string | null;

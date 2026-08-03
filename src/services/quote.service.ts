@@ -6,6 +6,7 @@ import {
   findQuoteByIdAdmin,
   findQuoteCurrentStatus,
   updateQuoteStatus,
+  updateCustomerQuoteWithItems,
 } from '../repositories/quote.repository.js';
 import { AppError } from '../utils/AppError.js';
 import type {
@@ -16,6 +17,7 @@ import type {
   QuoteRequestSummary,
   QuoteRequestAdminSummary,
   QuoteStatus,
+  UpdateCustomerQuoteInput,
 } from '../types/quote.types.js';
 
 // ─── Customer ─────────────────────────────────────────────────────────────────
@@ -58,6 +60,28 @@ export async function getMyQuoteById(
 ): Promise<QuoteRequest> {
   const quote = await findQuoteByIdAndProfileId(id, profileId);
   if (!quote) throw AppError.notFound('Quote not found');
+  return quote;
+}
+
+export async function updateMyQuote(
+  id: string,
+  profileId: string,
+  input: UpdateCustomerQuoteInput,
+): Promise<QuoteRequest> {
+  try {
+    const updated = await updateCustomerQuoteWithItems({ quoteId: id, profileId, ...input });
+    if (!updated) throw AppError.notFound('Quote not found');
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Selected size ')) {
+      throw AppError.badRequest('Selected size is not available for the product');
+    }
+    if (error instanceof Error && error.message === 'Customer quote is already completed') {
+      throw AppError.badRequest('Completed customer quotes cannot be updated');
+    }
+    throw error;
+  }
+  const quote = await findQuoteByIdAndProfileId(id, profileId);
+  if (!quote) throw AppError.notFound('Quote not found after update');
   return quote;
 }
 
