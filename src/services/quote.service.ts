@@ -10,6 +10,9 @@ import {
   findPendingDraftByProfileId,
 } from '../repositories/quote.repository.js';
 import { AppError } from '../utils/AppError.js';
+import { sendEmail } from '../utils/mailer.js';
+import { buildQuoteSubmissionEmail } from '../utils/quoteSubmissionEmail.js';
+import { env } from '../config/env.js';
 import type {
   CreateQuoteInput,
   UpdateQuoteStatusInput,
@@ -20,22 +23,45 @@ import type {
   QuoteStatus,
   UpdateCustomerQuoteInput,
 } from '../types/quote.types.js';
+import type { AuthUser } from '../types/api.types.js';
+
+// ─── Email notification (fire-and-forget) ────────────────────────────────────
+
+async function sendQuoteNotificationEmail(quote: QuoteRequestAdmin, isGuest: boolean): Promise<void> {
+  const contactMethod = quote.contactMethod ?? 'email';
+  const html = buildQuoteSubmissionEmail({
+    customerName: quote.customerName ?? 'Unknown',
+    customerEmail: quote.customerEmail ?? '',
+    customerPhone: quote.customerPhone ?? null,
+    contactMethod,
+    referenceNumber: quote.referenceNumber,
+    status: quote.status,
+    submittedAt: quote.submittedAt,
+    customerNotes: quote.customerNotes,
+    items: quote.items,
+    isGuest,
+  });
+
+  await sendEmail({
+    to: env.notificationEmail,
+    subject: `New Quote Submission — ${quote.referenceNumber}`,
+    html,
+  });
+}
 
 // ─── Customer ─────────────────────────────────────────────────────────────────
 
-// One-active-draft rule:
-// Authenticated customers have at most one pending draft at a time.
-// POST /api/quotes merges into the existing draft when one exists,
-// and only creates a new record when none does.
-// Guests always create a new quote (no profile to look up a draft against).
 export async function submitQuote(
   profileId: string | null,
   input: CreateQuoteInput,
+  user?: AuthUser,
 ): Promise<QuoteRequest> {
+  // ── Guest path ──────────────────────────────────────────────────────────────
   if (!profileId) {
     if (!input.guestName || !input.guestEmail) {
       throw AppError.badRequest('guestName and guestEmail are required for guest quotes');
     }
+
     const quoteId = await createQuoteWithItems({
       profileId: null,
       guestName: input.guestName,
@@ -43,40 +69,112 @@ export async function submitQuote(
       guestPhone: input.guestPhone ?? null,
       customerNotes: input.customerNotes ?? null,
       items: input.items ?? [],
+      contactMethod: null,   // guests use guestPhone directly; no contactMethod stored
+      phoneNumber: null,
     });
+
     const quote = await findQuoteByIdAdmin(quoteId);
     if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
+
+    // Send notification — guest phone is already on the quote record
+    sendQuoteNotificationEmail(
+      { ...quote, contactMethod: 'whatsapp' },  // guests always provide phone
+      true,
+    ).catch((err: unknown) => console.error('[quote] Failed to send guest notification email:', err));
+
     return quote;
   }
 
-  // Check for an existing pending draft.
+  // ── Authenticated path ──────────────────────────────────────────────────────
+  const contactMethod = input.contactMethod ?? 'email';
+  const phoneNumber = input.phoneNumber ?? null;
+
+  // WhatsApp requires a phone number — either submitted now or already on profile
+  if (contactMethod === 'whatsapp' && !phoneNumber) {
+    // Check if the profile already has one saved
+    const existingDraftId = await findPendingDraftByProfileId(profileId);
+    // We need the profile phone — fetch it via the admin quote lookup after creation
+    // but we must validate BEFORE creating. Fetch profile phone directly.
+    const { pool } = await import('../database/pool.js');
+    const profileResult = await pool.query(
+      `SELECT phone FROM profiles WHERE id = $1`,
+      [profileId],
+    );
+    const savedPhone = ((profileResult.rows[0] as Record<string, unknown>)?.['phone'] as string | null) ?? null;
+
+    if (!savedPhone) {
+      throw AppError.badRequest(
+        'A phone number is required when WhatsApp is selected as the contact method',
+      );
+    }
+
+    // Has a saved phone — proceed using it (no update needed)
+    const quoteId = existingDraftId
+      ? await mergeIntoDraft(existingDraftId, profileId, input)
+      : await createQuoteWithItems({
+          profileId,
+          guestName: null,
+          guestEmail: null,
+          guestPhone: null,
+          customerNotes: input.customerNotes ?? null,
+          items: input.items ?? [],
+          contactMethod,
+          phoneNumber: null,  // already saved, no update needed
+        });
+
+    return finishAuthenticatedQuote(quoteId, profileId, true);
+  }
+
+  // email method or whatsapp with a new phone number provided
   const existingDraftId = await findPendingDraftByProfileId(profileId);
 
-  if (existingDraftId) {
-    // Merge into the existing draft — do not create a new record.
-    await updateCustomerQuoteWithItems({
-      quoteId: existingDraftId,
-      profileId,
-      customerNotes: input.customerNotes,
-      items: input.items,
-    });
-    const quote = await findQuoteByIdAndProfileId(existingDraftId, profileId);
-    if (!quote) throw new AppError('Draft quote could not be retrieved', 500);
-    return quote;
-  }
+  const quoteId = existingDraftId
+    ? await mergeIntoDraft(existingDraftId, profileId, input)
+    : await createQuoteWithItems({
+        profileId,
+        guestName: null,
+        guestEmail: null,
+        guestPhone: null,
+        customerNotes: input.customerNotes ?? null,
+        items: input.items ?? [],
+        contactMethod,
+        phoneNumber: contactMethod === 'whatsapp' ? phoneNumber : null,
+      });
 
-  // No pending draft — create a new one.
-  const quoteId = await createQuoteWithItems({
+  return finishAuthenticatedQuote(quoteId, profileId, false);
+}
+
+async function mergeIntoDraft(
+  draftId: string,
+  profileId: string,
+  input: CreateQuoteInput,
+): Promise<string> {
+  await updateCustomerQuoteWithItems({
+    quoteId: draftId,
     profileId,
-    guestName: null,
-    guestEmail: null,
-    guestPhone: null,
-    customerNotes: input.customerNotes ?? null,
-    items: input.items ?? [],
+    customerNotes: input.customerNotes,
+    items: input.items,
   });
+  return draftId;
+}
 
+async function finishAuthenticatedQuote(
+  quoteId: string,
+  profileId: string,
+  skipEmail: boolean,
+): Promise<QuoteRequest> {
   const quote = await findQuoteByIdAndProfileId(quoteId, profileId);
   if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
+
+  if (!skipEmail) {
+    const adminQuote = await findQuoteByIdAdmin(quoteId);
+    if (adminQuote) {
+      sendQuoteNotificationEmail(adminQuote, false).catch((err: unknown) =>
+        console.error('[quote] Failed to send authenticated notification email:', err),
+      );
+    }
+  }
+
   return quote;
 }
 

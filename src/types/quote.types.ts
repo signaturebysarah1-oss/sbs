@@ -30,6 +30,8 @@ export interface CreateQuoteInput {
   guestPhone?: string;
   customerNotes?: string | null;
   items?: QuoteItemInput[];   // optional — customer may create an empty draft first
+  contactMethod?: 'email' | 'whatsapp';
+  phoneNumber?: string | null;
 }
 
 export interface UpdateCustomerQuoteInput {
@@ -81,6 +83,7 @@ export interface QuoteRequest {
   profileId: string | null;
   status: QuoteStatus;
   customerStatus: CustomerQuoteStatus;
+  contactMethod: 'email' | 'whatsapp' | null;
   customerNotes: string | null;
   submittedAt: string;
   reviewedAt: string | null;

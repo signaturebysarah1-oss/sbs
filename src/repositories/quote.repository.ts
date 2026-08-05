@@ -41,6 +41,7 @@ function rowToSummary(row: Record<string, unknown>): QuoteRequestSummary {
     profileId: (row['profile_id'] as string | null) ?? null,
     status: row['status'] as QuoteStatus,
     customerStatus: row['customer_status'] as CustomerQuoteStatus,
+    contactMethod: (row['contact_method'] as 'email' | 'whatsapp' | null) ?? null,
     customerNotes: (row['customer_notes'] as string | null) ?? null,
     submittedAt: (row['submitted_at'] as Date).toISOString(),
     reviewedAt: row['reviewed_at'] ? (row['reviewed_at'] as Date).toISOString() : null,
@@ -90,6 +91,8 @@ export async function createQuoteWithItems(data: {
   guestPhone: string | null;
   customerNotes: string | null;
   items: QuoteItemInput[];
+  contactMethod: 'email' | 'whatsapp' | null;
+  phoneNumber: string | null;
 }): Promise<string> {
   // Wrapped in a transaction — quote_request + all quote_items must succeed together.
   const client = await pool.connect();
@@ -112,10 +115,18 @@ export async function createQuoteWithItems(data: {
     );
     const referenceNumber = `SBS-${year}-${String(count + 1).padStart(5, '0')}`;
 
+    // If authenticated and a phone number was provided, update the profile
+    if (data.profileId && data.phoneNumber) {
+      await client.query(
+        `UPDATE profiles SET phone = $1, updated_at = now() WHERE id = $2`,
+        [data.phoneNumber, data.profileId],
+      );
+    }
+
     const quoteResult = await client.query(
       `INSERT INTO quote_requests
-         (reference_number, profile_id, guest_name, guest_email, guest_phone, customer_notes, status, customer_status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'pending')
+         (reference_number, profile_id, guest_name, guest_email, guest_phone, customer_notes, status, customer_status, contact_method)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'pending', $7)
        RETURNING id`,
       [
         referenceNumber,
@@ -124,6 +135,7 @@ export async function createQuoteWithItems(data: {
         data.guestEmail,
         data.guestPhone,
         data.customerNotes,
+        data.contactMethod,
       ],
     );
 
@@ -179,7 +191,7 @@ export async function findQuotesByProfileId(
 ): Promise<QuoteRequestSummary[]> {
   const result = await pool.query(
     `SELECT id, reference_number, profile_id, status, customer_notes,
-            customer_status, submitted_at, reviewed_at, completed_at, created_at, updated_at
+            customer_status, contact_method, submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests
      WHERE profile_id = $1
      ORDER BY created_at DESC`,
@@ -193,7 +205,7 @@ export async function findQuoteByIdAndProfileId(
   profileId: string,
 ): Promise<QuoteRequest | null> {
   const result = await pool.query(
-    `SELECT id, reference_number, profile_id, status, customer_status, customer_notes,
+    `SELECT id, reference_number, profile_id, status, customer_status, contact_method, customer_notes,
             submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests
      WHERE id = $1 AND profile_id = $2`,
@@ -228,7 +240,7 @@ export async function findAllQuotesAdmin(
   const result = await pool.query(
     `SELECT
        qr.id, qr.reference_number, qr.profile_id, qr.status, qr.customer_status,
-       qr.customer_notes, qr.admin_notes,
+       qr.customer_notes, qr.admin_notes, qr.contact_method,
        qr.submitted_at, qr.reviewed_at, qr.completed_at,
        qr.created_at, qr.updated_at,
        COALESCE(p.full_name, qr.guest_name)   AS customer_name,
@@ -248,7 +260,7 @@ export async function findQuoteByIdAdmin(id: string): Promise<QuoteRequestAdmin 
   const result = await pool.query(
     `SELECT
        qr.id, qr.reference_number, qr.profile_id, qr.status, qr.customer_status,
-       qr.customer_notes, qr.admin_notes,
+       qr.customer_notes, qr.admin_notes, qr.contact_method,
        qr.submitted_at, qr.reviewed_at, qr.completed_at,
        qr.created_at, qr.updated_at,
        COALESCE(p.full_name, qr.guest_name)   AS customer_name,

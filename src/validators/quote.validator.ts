@@ -48,6 +48,14 @@ export const createQuoteSchema = z.object({
   guestPhone: z.string().trim().min(1).max(50).optional(),
   customerNotes: z.string().max(2000).nullable().optional(),
   items: z.array(quoteItemSchema).max(50, 'Maximum 50 items per quote').optional(),
+  contactMethod: z.enum(['email', 'whatsapp']).optional(),
+  phoneNumber: z
+    .string()
+    .trim()
+    .min(7, 'phoneNumber must be at least 7 characters')
+    .max(20, 'phoneNumber must be at most 20 characters')
+    .nullable()
+    .optional(),
 });
 
 // ─── Update customer quote schema ─────────────────────────────────────────────

@@ -40,7 +40,7 @@ export async function createQuote(
       throw AppError.badRequest('guestName and guestEmail are required for guest quotes');
     }
 
-    const quote = await submitQuote(req.user?.id ?? null, parsed.data);
+    const quote = await submitQuote(req.user?.id ?? null, parsed.data, req.user);
     sendSuccess(res, 'Quote submitted successfully', quote, HttpStatus.CREATED);
   } catch (err) {
     next(err);
