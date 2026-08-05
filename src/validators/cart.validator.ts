@@ -26,3 +26,16 @@ export const updateCartItemSchema = z
       d.selectedMaterial !== undefined,
     { message: 'At least one field must be provided' },
   );
+
+export const submitCartSchema = z.object({
+  contactMethod: z.enum(['email', 'whatsapp'], {
+    error: "contactMethod must be 'email' or 'whatsapp'",
+  }),
+  phoneNumber: z
+    .string()
+    .trim()
+    .min(7, 'phoneNumber must be at least 7 characters')
+    .max(20, 'phoneNumber must be at most 20 characters')
+    .nullable()
+    .optional(),
+});

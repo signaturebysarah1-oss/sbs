@@ -226,7 +226,9 @@ export async function clearActiveCart(profileId: string): Promise<void> {
 
 export async function submitActiveCart(
   profileId: string,
-): Promise<{ submittedCartId: string; historyId: string; newActiveCartId: string }> {
+  contactMethod: 'email' | 'whatsapp',
+  phoneNumber: string | null,
+): Promise<{ submittedCartId: string; historyId: string; newActiveCartId: string; resolvedPhone: string | null }> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -241,6 +243,23 @@ export async function submitActiveCart(
       return Promise.reject(new Error('NO_ACTIVE_CART'));
     }
     const cartId = (cartResult.rows[0] as Record<string, unknown>)['id'] as string;
+
+    // Resolve phone: use submitted number, fall back to profile's saved number
+    let resolvedPhone: string | null = null;
+    if (phoneNumber) {
+      // Save the new number to the profile for future use
+      await client.query(
+        `UPDATE profiles SET phone = $1, updated_at = now() WHERE id = $2`,
+        [phoneNumber, profileId],
+      );
+      resolvedPhone = phoneNumber;
+    } else {
+      const profileResult = await client.query(
+        `SELECT phone FROM profiles WHERE id = $1`,
+        [profileId],
+      );
+      resolvedPhone = ((profileResult.rows[0] as Record<string, unknown>)?.['phone'] as string | null) ?? null;
+    }
 
     // Read all cart items
     const itemsResult = await client.query(
@@ -288,7 +307,7 @@ export async function submitActiveCart(
     const newActiveCartId = (newCartResult.rows[0] as Record<string, unknown>)['id'] as string;
 
     await client.query('COMMIT');
-    return { submittedCartId: cartId, historyId, newActiveCartId };
+    return { submittedCartId: cartId, historyId, newActiveCartId, resolvedPhone };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

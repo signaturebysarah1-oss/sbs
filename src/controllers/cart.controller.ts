@@ -9,7 +9,7 @@ import {
   submitMyCart,
   updateMyCartItem,
 } from '../services/cart.service.js';
-import { addCartItemSchema, updateCartItemSchema } from '../validators/cart.validator.js';
+import { addCartItemSchema, updateCartItemSchema, submitCartSchema } from '../validators/cart.validator.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
 import { sendSuccess } from '../utils/response.js';
@@ -111,7 +111,12 @@ export async function submitCart(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const result = await submitMyCart(resolvedProfileId(req));
+    if (!req.user) throw AppError.unauthorized('Not authenticated');
+    const parsed = submitCartSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    }
+    const result = await submitMyCart(req.user, parsed.data);
     sendSuccess(res, 'Cart submitted successfully', result);
   } catch (err) {
     next(err);

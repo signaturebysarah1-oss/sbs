@@ -69,3 +69,8 @@ export interface CartSubmitResult {
   historyId: string;
   newActiveCartId: string;
 }
+
+export interface CartSubmitInput {
+  contactMethod: 'email' | 'whatsapp';
+  phoneNumber?: string | null;
+}

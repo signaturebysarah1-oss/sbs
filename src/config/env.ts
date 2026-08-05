@@ -28,6 +28,9 @@ export const env = {
 
   frontendUrl: requireEnv('FRONTEND_URL'),
 
+  resendApiKey: requireEnv('RESEND_API_KEY'),
+  notificationEmail: process.env['NOTIFICATION_EMAIL'] ?? 'signaturebysarah1@gmail.com',
+
   get isProduction() {
     return this.nodeEnv === 'production';
   },
