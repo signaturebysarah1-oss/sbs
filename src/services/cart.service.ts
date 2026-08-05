@@ -1,29 +1,35 @@
 import {
-  addCartItem,
-  clearCart,
+  addItemToActiveCart,
+  clearActiveCart,
   deleteCartItem,
-  findOrCreateCartByProfileId,
-  updateCartItemQuantity,
+  findCartHistoryByProfileId,
+  findOrCreateActiveCart,
+  submitActiveCart,
+  updateCartItem,
 } from '../repositories/cart.repository.js';
 import { AppError } from '../utils/AppError.js';
-import type { AddCartItemInput, Cart } from '../types/cart.types.js';
+import type {
+  AddCartItemInput,
+  Cart,
+  CartHistory,
+  CartSubmitResult,
+  UpdateCartItemInput,
+} from '../types/cart.types.js';
 
 export async function getMyCart(profileId: string): Promise<Cart> {
-  return findOrCreateCartByProfileId(profileId);
+  return findOrCreateActiveCart(profileId);
 }
 
 export async function addItemToCart(profileId: string, input: AddCartItemInput): Promise<Cart> {
-  const cart = await addCartItem(profileId, input);
-  if (!cart) throw AppError.notFound('Product, variant, color, material, or size not found');
-  return cart;
+  return addItemToActiveCart(profileId, input);
 }
 
 export async function updateMyCartItem(
   profileId: string,
   itemId: string,
-  quantity: number,
+  input: UpdateCartItemInput,
 ): Promise<void> {
-  const updated = await updateCartItemQuantity(profileId, itemId, quantity);
+  const updated = await updateCartItem(profileId, itemId, input);
   if (!updated) throw AppError.notFound('Cart item not found');
 }
 
@@ -33,5 +39,20 @@ export async function removeMyCartItem(profileId: string, itemId: string): Promi
 }
 
 export async function clearMyCart(profileId: string): Promise<void> {
-  await clearCart(profileId);
+  await clearActiveCart(profileId);
+}
+
+export async function getMyCartHistory(profileId: string): Promise<CartHistory[]> {
+  return findCartHistoryByProfileId(profileId);
+}
+
+export async function submitMyCart(profileId: string): Promise<CartSubmitResult> {
+  try {
+    return await submitActiveCart(profileId);
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NO_ACTIVE_CART') {
+      throw AppError.notFound('No active cart found');
+    }
+    throw err;
+  }
 }

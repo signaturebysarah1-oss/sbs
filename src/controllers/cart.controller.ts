@@ -4,7 +4,9 @@ import {
   addItemToCart,
   clearMyCart,
   getMyCart,
+  getMyCartHistory,
   removeMyCartItem,
+  submitMyCart,
   updateMyCartItem,
 } from '../services/cart.service.js';
 import { addCartItemSchema, updateCartItemSchema } from '../validators/cart.validator.js';
@@ -57,7 +59,7 @@ export async function updateCartItem(
     if (!parsed.success) {
       throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
     }
-    await updateMyCartItem(resolvedProfileId(req), req.params['id'] as string, parsed.data.quantity);
+    await updateMyCartItem(resolvedProfileId(req), req.params['id'] as string, parsed.data);
     sendSuccess(res, 'Cart item updated');
   } catch (err) {
     next(err);
@@ -85,6 +87,32 @@ export async function clearCart(
   try {
     await clearMyCart(resolvedProfileId(req));
     sendSuccess(res, 'Cart cleared');
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getCartHistory(
+  req: MaybeAuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const history = await getMyCartHistory(resolvedProfileId(req));
+    sendSuccess(res, 'Cart history retrieved', history);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function submitCart(
+  req: MaybeAuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const result = await submitMyCart(resolvedProfileId(req));
+    sendSuccess(res, 'Cart submitted successfully', result);
   } catch (err) {
     next(err);
   }

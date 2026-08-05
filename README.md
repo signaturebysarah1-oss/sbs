@@ -60,9 +60,10 @@ npm run build
 ### Database migrations
 
 Apply the SQL files in `src/database/migrations` in numeric order to a new
-database. Existing deployments should apply only the new migration:
-`008_one_pending_draft_per_customer.sql` — adds the partial unique index that
-enforces one active draft per authenticated customer at the database level.
+database. Existing deployments should apply only the new migrations:
+
+- `008_one_pending_draft_per_customer.sql` — adds the partial unique index that enforces one active draft per authenticated customer at the database level.
+- `009_cart_overhaul.sql` — replaces the guest-session cart design with a status-based authenticated cart. Adds `status` (`active`, `submitted`, `abandoned`) to `carts`, a partial unique index enforcing one active cart per profile, snapshot columns on `cart_items` (`product_name_snapshot`, `image_url_snapshot`, `selected_color`, `selected_material`, `selected_size`), makes `cart_items.product_id` nullable, and creates the `cart_history` table.
 
 ### Production
 
@@ -518,34 +519,154 @@ Update quote status:
 
 ## Cart
 
-Cart endpoints are authenticated-only. A cart belongs to the authenticated profile. Adding the same product, variant, color, material, and size combination increases its quantity instead of creating a duplicate. The current product/variant and option price is saved in the existing `unit_price_snapshot` field when the item is first added. The selected primary product image URL is also stored as `imageUrlSnapshot` on the cart item; this snapshot is returned directly and is not changed if product images are later updated.
+Cart endpoints are authenticated-only. Each authenticated profile has one active cart at a time. Cart items store complete snapshots of the product name, image, price, size, color, and material at the time of adding — the cart display never depends on live product data. When the same product and option combination is added again, the quantity increases instead of creating a duplicate row.
+
+### Cart status lifecycle
+
+The `carts` table has a `status` field that tracks where the cart is in its lifecycle:
+
+| Status | Meaning |
+| --- | --- |
+| `active` | The cart the customer is currently building. Only one active cart per profile is allowed at a time, enforced by a partial unique index at the database level. |
+| `submitted` | The cart has been submitted by the customer. It is read-only and preserved for history. |
+| `abandoned` | Reserved for future use (for example, carts that expire without being submitted). |
+
+### Cart item snapshots
+
+Each `cart_items` row stores the complete state of the item at the time it was added:
+
+- `product_name_snapshot` — the product name as it appeared when added
+- `image_url_snapshot` — the product image URL at time of adding
+- `unit_price_snapshot` — the price at time of adding
+- `selected_color`, `selected_material`, `selected_size` — the customer's chosen options
+
+These snapshots are the source of truth for displaying the cart. If a product is later renamed, repriced, or deleted, the cart item still shows what the customer originally selected. `product_id` is nullable to support fully custom items with no catalogue record.
+
+### Endpoints
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |
-| `GET` | `/api/cart` | Customer token | Returns the current cart, product details, selected variant details, and available image metadata. Creates an empty cart if needed. |
-| `POST` | `/api/cart/items` | Customer token | Adds an item or increases the quantity of an existing product/variant entry. |
-| `PATCH` | `/api/cart/items/:id` | Customer token | Changes an owned cart item's quantity; quantity must be greater than zero. |
-| `DELETE` | `/api/cart/items/:id` | Customer token | Removes an owned cart item. |
-| `DELETE` | `/api/cart` | Customer token | Clears all items from the current cart. |
+| `GET` | `/api/cart` | Customer token | Returns the active cart with all items. Creates an empty active cart if none exists. |
+| `POST` | `/api/cart/items` | Customer token | Adds an item to the active cart, or increases quantity if the same combination already exists. |
+| `PATCH` | `/api/cart/items/:id` | Customer token | Updates quantity, size, color, or material on an owned active cart item. At least one field required. |
+| `DELETE` | `/api/cart/items/:id` | Customer token | Removes one item from the active cart. |
+| `DELETE` | `/api/cart` | Customer token | Clears all items from the active cart. |
+| `POST` | `/api/cart/submit` | Customer token | Submits the active cart: snapshots it to history, marks it submitted, and creates a new empty active cart. |
+| `GET` | `/api/cart/history` | Customer token | Returns all previously submitted cart snapshots for the authenticated profile, newest first. |
 
-Add an item:
+### Add an item
+
+The frontend sends the complete item snapshot. The backend does not look up product details to populate the cart.
 
 ```json
 {
   "productId": "00000000-0000-0000-0000-000000000000",
+  "productNameSnapshot": "Classic Leather Loafer",
+  "imageUrlSnapshot": "https://images.example.com/loafer.jpg",
+  "quantity": 1,
+  "selectedSize": 42,
   "selectedColor": "Brown",
   "selectedMaterial": "Full Grain Leather",
-  "selectedSize": 42,
-  "quantity": 1
+  "unitPriceSnapshot": 85000
 }
 ```
 
-`selectedColor`, `selectedMaterial`, and `selectedSize` must be available on the product. `selectedSize` is validated through `product_sizes`; it does not create or resolve a product variant. `variantId` remains supported for legacy variant use independently of `selectedSize`.
+`productId` is optional and nullable. All snapshot fields except `quantity` and `unitPriceSnapshot` are optional. Duplicate detection matches on `productId`, `selectedSize`, `selectedColor`, and `selectedMaterial`; a match increases quantity instead of inserting a new row.
 
-Update quantity:
+### Update a cart item
+
+At least one field must be provided.
 
 ```json
-{ "quantity": 3 }
+{
+  "quantity": 2,
+  "selectedSize": 43,
+  "selectedColor": "Black",
+  "selectedMaterial": "Suede"
+}
+```
+
+### Submit the cart
+
+No request body is required.
+
+```http
+POST /api/cart/submit
+Authorization: Bearer <access_token>
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "message": "Cart submitted successfully",
+  "data": {
+    "submittedCartId": "00000000-0000-0000-0000-000000000000",
+    "historyId": "00000000-0000-0000-0000-000000000001",
+    "newActiveCartId": "00000000-0000-0000-0000-000000000002"
+  }
+}
+```
+
+Possible errors:
+
+| Status | Condition |
+| --- | --- |
+| `401 Unauthorized` | No valid token provided. |
+| `404 Not Found` | The authenticated profile has no active cart. |
+
+The entire submission runs in a single database transaction. The active cart row is locked at the start to prevent concurrent submissions. If any step fails, the transaction rolls back and the cart remains active and unchanged.
+
+### Cart submission lifecycle
+
+```
+Customer adds items → POST /api/cart/items
+        ↓
+Backend finds or creates active cart
+        ↓
+Customer updates items → PATCH /api/cart/items/:id
+        ↓
+Customer submits → POST /api/cart/submit
+        ↓
+Transaction begins:
+  1. Active cart row locked
+  2. All cart items read
+  3. Snapshot written to cart_history (items JSONB + total_snapshot)
+  4. Cart status: active → submitted
+  5. New empty active cart created
+Transaction committed
+        ↓
+Customer immediately has a new empty active cart
+```
+
+### Cart history
+
+`GET /api/cart/history` returns all submitted carts for the authenticated profile. Each record contains the complete item snapshot as it existed at submission time, the calculated total, and the submission timestamp. This is the foundation for a future "My Orders" view.
+
+```json
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "originalCartId": "00000000-0000-0000-0000-000000000000",
+    "profileId": "00000000-0000-0000-0000-000000000003",
+    "items": [
+      {
+        "productId": "00000000-0000-0000-0000-000000000000",
+        "productNameSnapshot": "Classic Leather Loafer",
+        "imageUrlSnapshot": "https://images.example.com/loafer.jpg",
+        "quantity": 1,
+        "selectedSize": 42,
+        "selectedColor": "Brown",
+        "selectedMaterial": "Full Grain Leather",
+        "unitPriceSnapshot": 85000
+      }
+    ],
+    "totalSnapshot": 85000,
+    "completedAt": "2025-01-01T12:00:00.000Z",
+    "createdAt": "2025-01-01T12:00:00.000Z"
+  }
+]
 ```
 
 ## Favorites

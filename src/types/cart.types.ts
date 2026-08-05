@@ -1,49 +1,71 @@
-import type { ProductImage } from './catalog.types.js';
-
-export interface CartProduct {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  category: string | null;
-  basePrice: number;
-  images: ProductImage[];
-}
-
-export interface CartVariant {
-  id: string;
-  sizeLabel: string | null;
-  sizeValue: number | null;
-  sku: string | null;
-  priceAdjustment: number;
-}
+export const CART_STATUSES = ['active', 'submitted', 'abandoned'] as const;
+export type CartStatus = (typeof CART_STATUSES)[number];
 
 export interface CartItem {
   id: string;
-  quantity: number;
-  unitPriceSnapshot: number;
+  cartId: string;
+  productId: string | null;
+  productNameSnapshot: string | null;
   imageUrlSnapshot: string | null;
-  createdAt: string;
-  updatedAt: string;
+  quantity: number;
+  selectedSize: number | null;
   selectedColor: string | null;
   selectedMaterial: string | null;
-  selectedSize: number | null;
-  product: CartProduct;
-  variant: CartVariant | null;
+  unitPriceSnapshot: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Cart {
   id: string;
+  profileId: string;
+  status: CartStatus;
+  items: CartItem[];
   createdAt: string;
   updatedAt: string;
-  items: CartItem[];
+}
+
+export interface CartHistoryItem {
+  productId: string | null;
+  productNameSnapshot: string | null;
+  imageUrlSnapshot: string | null;
+  quantity: number;
+  selectedSize: number | null;
+  selectedColor: string | null;
+  selectedMaterial: string | null;
+  unitPriceSnapshot: number;
+}
+
+export interface CartHistory {
+  id: string;
+  originalCartId: string | null;
+  profileId: string;
+  items: CartHistoryItem[];
+  totalSnapshot: number;
+  completedAt: string;
+  createdAt: string;
 }
 
 export interface AddCartItemInput {
-  productId: string;
-  variantId?: string | null;
+  productId?: string | null;
+  productNameSnapshot?: string | null;
+  imageUrlSnapshot?: string | null;
+  quantity: number;
+  selectedSize?: number | null;
   selectedColor?: string | null;
   selectedMaterial?: string | null;
+  unitPriceSnapshot: number;
+}
+
+export interface UpdateCartItemInput {
+  quantity?: number;
   selectedSize?: number | null;
-  quantity: number;
+  selectedColor?: string | null;
+  selectedMaterial?: string | null;
+}
+
+export interface CartSubmitResult {
+  submittedCartId: string;
+  historyId: string;
+  newActiveCartId: string;
 }
