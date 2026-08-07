@@ -27,6 +27,7 @@ export const env = {
   cloudinaryApiSecret: requireEnv('CLOUDINARY_API_SECRET'),
 
   frontendUrl: requireEnv('FRONTEND_URL'),
+  adminUrl: requireEnv('ADMIN_URL'),
 
   resendApiKey: requireEnv('RESEND_API_KEY'),
   notificationEmail: process.env['NOTIFICATION_EMAIL'] ?? 'signaturebysarah1@gmail.com',
