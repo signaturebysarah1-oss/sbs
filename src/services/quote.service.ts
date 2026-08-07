@@ -9,6 +9,7 @@ import {
   updateCustomerQuoteWithItems,
   findPendingDraftByProfileId,
 } from '../repositories/quote.repository.js';
+import { pool } from '../database/pool.js';
 import { AppError } from '../utils/AppError.js';
 import { sendEmail } from '../utils/mailer.js';
 import { buildQuoteSubmissionEmail } from '../utils/quoteSubmissionEmail.js';
@@ -91,11 +92,7 @@ export async function submitQuote(
 
   // WhatsApp requires a phone number — either submitted now or already on profile
   if (contactMethod === 'whatsapp' && !phoneNumber) {
-    // Check if the profile already has one saved
-    const existingDraftId = await findPendingDraftByProfileId(profileId);
-    // We need the profile phone — fetch it via the admin quote lookup after creation
-    // but we must validate BEFORE creating. Fetch profile phone directly.
-    const { pool } = await import('../database/pool.js');
+    // Check if the profile already has a phone saved
     const profileResult = await pool.query(
       `SELECT phone FROM profiles WHERE id = $1`,
       [profileId],
@@ -109,6 +106,7 @@ export async function submitQuote(
     }
 
     // Has a saved phone — proceed using it (no update needed)
+    const existingDraftId = await findPendingDraftByProfileId(profileId);
     const quoteId = existingDraftId
       ? await mergeIntoDraft(existingDraftId, profileId, input)
       : await createQuoteWithItems({
@@ -119,10 +117,10 @@ export async function submitQuote(
           customerNotes: input.customerNotes ?? null,
           items: input.items ?? [],
           contactMethod,
-          phoneNumber: null,  // already saved, no update needed
+          phoneNumber: null,
         });
 
-    return finishAuthenticatedQuote(quoteId, profileId, true);
+    return finishAuthenticatedQuote(quoteId, profileId);
   }
 
   // email method or whatsapp with a new phone number provided
@@ -141,7 +139,7 @@ export async function submitQuote(
         phoneNumber: contactMethod === 'whatsapp' ? phoneNumber : null,
       });
 
-  return finishAuthenticatedQuote(quoteId, profileId, false);
+  return finishAuthenticatedQuote(quoteId, profileId);
 }
 
 async function mergeIntoDraft(
@@ -161,18 +159,15 @@ async function mergeIntoDraft(
 async function finishAuthenticatedQuote(
   quoteId: string,
   profileId: string,
-  skipEmail: boolean,
 ): Promise<QuoteRequest> {
   const quote = await findQuoteByIdAndProfileId(quoteId, profileId);
   if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
 
-  if (!skipEmail) {
-    const adminQuote = await findQuoteByIdAdmin(quoteId);
-    if (adminQuote) {
-      sendQuoteNotificationEmail(adminQuote, false).catch((err: unknown) =>
-        console.error('[quote] Failed to send authenticated notification email:', err),
-      );
-    }
+  const adminQuote = await findQuoteByIdAdmin(quoteId);
+  if (adminQuote) {
+    sendQuoteNotificationEmail(adminQuote, false).catch((err: unknown) =>
+      console.error('[quote] Failed to send authenticated notification email:', err),
+    );
   }
 
   return quote;
