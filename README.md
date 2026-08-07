@@ -11,6 +11,7 @@ The application is built with:
 - PostgreSQL hosted through Supabase
 - Supabase Auth for identity and access tokens
 - A layered REST API architecture: routes, controllers, services, repositories, validators, and middleware
+- Resend for transactional email notifications
 
 All API responses use a consistent JSON envelope with `success`, `message`, and `data` fields.
 
@@ -23,11 +24,12 @@ All API responses use a consistent JSON envelope with `success`, `message`, and 
 - Public product, collection, material, color, carousel, and customization catalog APIs
 - Admin product management, images, variants, and collection assignments
 - Public gallery with admin gallery management
-- Guest and authenticated quote submission with quote status history
+- Guest and authenticated quote submission with contact preference and email notifications
 - Contact submissions and admin review
 - SBS Academy registrations and admin review
-- Authenticated customer carts with price snapshots
+- Authenticated customer carts with price snapshots, submission lifecycle, and cart history
 - Authenticated product favorites
+- Internal email notifications to Signature By Sarah on every quote and cart submission
 
 ---
 
@@ -38,6 +40,7 @@ All API responses use a consistent JSON envelope with `success`, `message`, and 
 - Node.js 18 or later
 - A PostgreSQL database (Supabase PostgreSQL is supported)
 - A Supabase project configured for Auth
+- A Resend account for email notifications
 
 ### Installation
 
@@ -59,11 +62,11 @@ npm run build
 
 ### Database migrations
 
-Apply the SQL files in `src/database/migrations` in numeric order to a new
-database. Existing deployments should apply only the new migrations:
+Apply the SQL files in `src/database/migrations` in numeric order to a new database. Existing deployments should apply only the new migrations:
 
 - `008_one_pending_draft_per_customer.sql` — adds the partial unique index that enforces one active draft per authenticated customer at the database level.
 - `009_cart_overhaul.sql` — replaces the guest-session cart design with a status-based authenticated cart. Adds `status` (`active`, `submitted`, `abandoned`) to `carts`, a partial unique index enforcing one active cart per profile, snapshot columns on `cart_items` (`product_name_snapshot`, `image_url_snapshot`, `selected_color`, `selected_material`, `selected_size`), makes `cart_items.product_id` nullable, and creates the `cart_history` table.
+- `010_quote_contact_method.sql` — adds `contact_method` (`email`, `whatsapp`) to `quote_requests` so the customer's preferred contact channel is stored alongside the quote.
 
 ### Production
 
@@ -95,6 +98,8 @@ All variables below are required by the current runtime configuration unless a d
 | `CLOUDINARY_API_KEY` | Yes | Cloudinary API key required by the current environment loader. |
 | `CLOUDINARY_API_SECRET` | Yes | Cloudinary API secret required by the current environment loader. Keep secret. |
 | `FRONTEND_URL` | Yes | Allowed CORS origin for the frontend. |
+| `RESEND_API_KEY` | Yes | Resend API key used to send internal notification emails. |
+| `NOTIFICATION_EMAIL` | No (defaults to `signaturebysarah1@gmail.com`) | Recipient address for all internal order and quote notifications. |
 
 Example:
 
@@ -113,6 +118,8 @@ CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 FRONTEND_URL=http://localhost:3000
+RESEND_API_KEY=re_...
+NOTIFICATION_EMAIL=signaturebysarah1@gmail.com
 ```
 
 ---
@@ -136,6 +143,18 @@ Roles are:
 | `super_admin` | Same administrative endpoint access as `admin`. |
 
 Token sign-up, sign-in, password recovery, and OAuth flows are provided by Supabase Auth. The backend route currently exposed for authentication is `GET /api/auth/me`.
+
+---
+
+## Email Notifications
+
+After every successful quote submission and cart submission, the backend sends an internal HTML email notification to Signature By Sarah. The email is never sent to the customer.
+
+The notification includes the customer's name, email, phone, preferred contact method, order details, and a link to the admin panel. Emails are sent via Resend using the `RESEND_API_KEY` environment variable. If the email fails to send, the API response is not affected — the submission is already committed to the database.
+
+The branded email template is defined in `src/utils/emailBrand.ts` (shared constants and layout helpers), `src/utils/cartSubmissionEmail.ts` (cart-specific template), and `src/utils/quoteSubmissionEmail.ts` (quote-specific template).
+
+To replace the logo, update the `logoUrl` constant in `src/utils/emailBrand.ts`.
 
 ---
 
@@ -403,7 +422,40 @@ Submit an application:
 | `GET` | `/api/admin/quotes/:id` | Admin/Super Admin token | Returns one quote with customer details, items, and status history. |
 | `PATCH` | `/api/admin/quotes/:id/status` | Admin/Super Admin token | Updates quote status and writes a history entry. |
 
-Submit a guest quote:
+### Contact preference
+
+Every quote submission — guest or authenticated — records how the customer wants to be contacted. The frontend collects this choice and sends it with the request.
+
+Authenticated quote with email contact:
+
+```json
+{
+  "contactMethod": "email",
+  "customerNotes": "Please contact me with available options.",
+  "items": []
+}
+```
+
+Authenticated quote with WhatsApp contact:
+
+```json
+{
+  "contactMethod": "whatsapp",
+  "phoneNumber": "+2348012345678",
+  "customerNotes": "Please contact me with available options.",
+  "items": []
+}
+```
+
+`contactMethod` is `email` or `whatsapp`. When `whatsapp` is selected:
+
+- If `phoneNumber` is provided, it is saved to the authenticated customer's profile for future use.
+- If `phoneNumber` is omitted, the phone number already saved on the profile is used.
+- If `whatsapp` is selected and no phone number exists anywhere, the request is rejected with a `400` error.
+
+For guest quotes, `contactMethod` is not required. The guest's phone is taken from `guestPhone`.
+
+### Submit a guest quote
 
 ```json
 {
@@ -430,13 +482,26 @@ Submit a guest quote:
 }
 ```
 
-All quote-item snapshot and customisation fields are optional and nullable: `productNameSnapshot`, `variantLabelSnapshot`, `materialNameSnapshot`, `colorNameSnapshot`, `imageUrlSnapshot`, `shoeNameSnapshot`, `toeStyleSnapshot`, `size`, `customMeasurements`, `customNotes`, and `unitPriceSnapshot`. This allows a customer to save a partially configured item. When a value is supplied it is stored as an immutable snapshot; omitted or `null` values are stored as `null`, not placeholder strings. `productId` is also nullable — a fully custom shoe that does not correspond to any product record can be quoted by omitting or setting `productId` to `null`. Legacy `productName`, `material`, and `color` input aliases remain supported for compatibility.
+`guestName`, `guestEmail`, and `guestPhone` are used as the contact details in the internal notification email sent to Signature By Sarah.
 
-New quotes have two independent lifecycle fields: `status` is the admin workflow (`pending`, `reviewing`, `approved`, `completed`, or `cancelled`), while `customerStatus` tracks customer submission and starts as `pending`.
+### Quote item fields
+
+All snapshot and customisation fields are optional and nullable: `productNameSnapshot`, `variantLabelSnapshot`, `materialNameSnapshot`, `colorNameSnapshot`, `imageUrlSnapshot`, `shoeNameSnapshot`, `toeStyleSnapshot`, `size`, `customMeasurements`, `customNotes`, and `unitPriceSnapshot`. This allows a customer to save a partially configured item. When a value is supplied it is stored as an immutable snapshot; omitted or `null` values are stored as `null`, not placeholder strings. `productId` is also nullable — a fully custom shoe that does not correspond to any product record can be quoted by omitting or setting `productId` to `null`. Legacy `productName`, `material`, and `color` input aliases remain supported for compatibility.
+
+### Quote lifecycle fields
+
+Quotes have two independent lifecycle fields:
+
+| Field | Controlled by | Values | Purpose |
+| --- | --- | --- | --- |
+| `customerStatus` | Customer | `pending`, `completed` | Tracks whether the customer has finished building and submitted their draft. |
+| `status` | Admin | `pending`, `reviewing`, `approved`, `completed`, `cancelled` | Admin review workflow. Independent of `customerStatus`. |
+
+Setting `customerStatus = completed` does not change the admin `status`. The admin workflow begins after the customer submits.
 
 ### Active quote draft lifecycle
 
-Authenticated customers have **one active draft** at a time:
+Authenticated customers have one active draft at a time:
 
 ```
 Customer calls POST /api/quotes
@@ -455,20 +520,11 @@ Customer may now create a new pending draft
 
 This is enforced at both the application layer and the database layer via a partial unique index on `(profile_id) WHERE customer_status = 'pending'`.
 
-### customerStatus vs status
-
-| Field | Controlled by | Values | Purpose |
-| --- | --- | --- | --- |
-| `customerStatus` | Customer | `pending`, `completed` | Tracks whether the customer has finished building and submitted their draft. |
-| `status` | Admin | `pending`, `reviewing`, `approved`, `completed`, `cancelled` | Admin review workflow. Independent of `customerStatus`. |
-
-Setting `customerStatus = completed` does **not** change the admin `status`. The admin workflow begins after the customer submits.
-
 ### Nullable productId
 
 `productId` on a quote item is optional and nullable. A customer building a fully custom shoe — with custom measurements, materials, and notes but no matching product in the catalogue — can submit a quote item with `productId: null`. The snapshot fields capture all relevant details.
 
-Update a customer quote:
+### Update a customer quote
 
 ```json
 {
@@ -488,9 +544,9 @@ Update a customer quote:
 }
 ```
 
-All fields are optional, but at least one must be supplied. When `items` is supplied it replaces the quote's item list, allowing additions, removals, and quantity changes in one request. Item snapshot fields are accepted directly and returned by the quote GET/PATCH responses. Admin-only fields, including admin notes and the admin workflow status, are not accepted.
+All fields are optional, but at least one must be supplied. When `items` is supplied it replaces the quote's item list. Admin-only fields, including admin notes and the admin workflow status, are not accepted.
 
-A draft item can therefore be created or updated before customisation is complete:
+A draft item can be created or updated before customisation is complete:
 
 ```json
 {
@@ -506,9 +562,7 @@ A draft item can therefore be created or updated before customisation is complet
 }
 ```
 
-For authenticated submissions, send a customer token; guest contact fields are not required. Quote statuses are `pending`, `reviewing`, `approved`, `completed`, and `cancelled`.
-
-Update quote status:
+### Update quote status (admin)
 
 ```json
 {
@@ -516,6 +570,30 @@ Update quote status:
   "note": "Measurements are being reviewed."
 }
 ```
+
+Valid admin status transitions:
+
+| From | To |
+| --- | --- |
+| `pending` | `reviewing`, `cancelled` |
+| `reviewing` | `approved`, `cancelled` |
+| `approved` | `completed`, `cancelled` |
+| `completed` | — |
+| `cancelled` | — |
+
+### Quote email notification
+
+After every quote submission — guest or authenticated — an internal notification email is sent to Signature By Sarah. The email includes:
+
+- Customer name, email, phone, and preferred contact method
+- Quote reference number and status
+- Submission date
+- Customer notes
+- All quote items with snapshots
+- Estimated total (when prices are available)
+- A link to the admin quotes panel
+
+The email is fire-and-forget. If it fails, the quote submission is unaffected.
 
 ## Cart
 
@@ -551,7 +629,7 @@ These snapshots are the source of truth for displaying the cart. If a product is
 | `PATCH` | `/api/cart/items/:id` | Customer token | Updates quantity, size, color, or material on an owned active cart item. At least one field required. |
 | `DELETE` | `/api/cart/items/:id` | Customer token | Removes one item from the active cart. |
 | `DELETE` | `/api/cart` | Customer token | Clears all items from the active cart. |
-| `POST` | `/api/cart/submit` | Customer token | Submits the active cart: snapshots it to history, marks it submitted, and creates a new empty active cart. |
+| `POST` | `/api/cart/submit` | Customer token | Submits the active cart: records contact preference, snapshots items to history, marks cart submitted, and creates a new empty active cart. |
 | `GET` | `/api/cart/history` | Customer token | Returns all previously submitted cart snapshots for the authenticated profile, newest first. |
 
 ### Add an item
@@ -588,12 +666,34 @@ At least one field must be provided.
 
 ### Submit the cart
 
-No request body is required.
+The frontend sends the customer's contact preference with the submission request.
 
-```http
-POST /api/cart/submit
-Authorization: Bearer <access_token>
+Submit with email contact:
+
+```json
+{
+  "contactMethod": "email"
+}
 ```
+
+Submit with WhatsApp contact and a new phone number:
+
+```json
+{
+  "contactMethod": "whatsapp",
+  "phoneNumber": "+2348012345678"
+}
+```
+
+Submit with WhatsApp using the phone number already saved on the profile:
+
+```json
+{
+  "contactMethod": "whatsapp"
+}
+```
+
+`contactMethod` is required. `phoneNumber` is optional. When `whatsapp` is selected and `phoneNumber` is provided, the number is saved to the customer's profile for future submissions. When `whatsapp` is selected and no `phoneNumber` is provided, the phone already saved on the profile is used. If no phone exists anywhere, the request is rejected with a `400` error.
 
 Response:
 
@@ -613,6 +713,7 @@ Possible errors:
 
 | Status | Condition |
 | --- | --- |
+| `400 Bad Request` | `contactMethod` missing or invalid, or `whatsapp` selected with no phone number available. |
 | `401 Unauthorized` | No valid token provided. |
 | `404 Not Found` | The authenticated profile has no active cart. |
 
@@ -631,11 +732,14 @@ Customer submits → POST /api/cart/submit
         ↓
 Transaction begins:
   1. Active cart row locked
-  2. All cart items read
-  3. Snapshot written to cart_history (items JSONB + total_snapshot)
-  4. Cart status: active → submitted
-  5. New empty active cart created
+  2. Profile phone updated if new number provided
+  3. All cart items read
+  4. Snapshot written to cart_history (items JSONB + total_snapshot)
+  5. Cart status: active → submitted
+  6. New empty active cart created
 Transaction committed
+        ↓
+Internal notification email sent to Signature By Sarah (fire-and-forget)
         ↓
 Customer immediately has a new empty active cart
 ```
@@ -669,6 +773,10 @@ Customer immediately has a new empty active cart
 ]
 ```
 
+### Cart email notification
+
+After every successful cart submission, an internal notification email is sent to Signature By Sarah. The email includes the customer's name, email, phone, preferred contact method, all cart items with snapshots, the order total, and a link to the admin panel. The email is fire-and-forget and does not affect the API response.
+
 ## Favorites
 
 Favorites belong to authenticated profiles. Each profile can favorite a product only once.
@@ -692,7 +800,7 @@ Authorization: Bearer <access_token>
 
 ### Render
 
-Configure the Render service with all required environment variables, including `DATABASE_URL`, the Supabase values, OAuth values, Cloudinary values, and `FRONTEND_URL`.
+Configure the Render service with all required environment variables, including `DATABASE_URL`, the Supabase values, OAuth values, Cloudinary values, `FRONTEND_URL`, `RESEND_API_KEY`, and `NOTIFICATION_EMAIL`.
 
 | Setting | Value |
 | --- | --- |
