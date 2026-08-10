@@ -97,8 +97,10 @@ All variables below are required by the current runtime configuration unless a d
 | `CLOUDINARY_CLOUD_NAME` | Yes | Cloudinary cloud name required by the current environment loader. |
 | `CLOUDINARY_API_KEY` | Yes | Cloudinary API key required by the current environment loader. |
 | `CLOUDINARY_API_SECRET` | Yes | Cloudinary API secret required by the current environment loader. Keep secret. |
-| `FRONTEND_URL` | Yes | Allowed CORS origin for the frontend. |
-| `RESEND_API_KEY` | Yes | Resend API key used to send internal notification emails. |
+| `FRONTEND_URL` | Yes | Allowed CORS origin and base URL for customer tracking links. |
+| `ADMIN_URL` | Yes | Base URL used for admin dashboard links in notification emails. |
+| `RESEND_API_KEY` | Yes | Resend API key used to send transactional notifications. |
+| `RESEND_FROM_EMAIL` | Yes | A `Display Name <address@verified-domain>` sender accepted by Resend. |
 | `NOTIFICATION_EMAIL` | No (defaults to `signaturebysarah1@gmail.com`) | Recipient address for all internal order and quote notifications. |
 
 Example:
@@ -118,7 +120,9 @@ CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 FRONTEND_URL=http://localhost:3000
+ADMIN_URL=http://localhost:3001
 RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL="Signature By Sarah <orders@example.com>"
 NOTIFICATION_EMAIL=signaturebysarah1@gmail.com
 ```
 
@@ -148,9 +152,11 @@ Token sign-up, sign-in, password recovery, and OAuth flows are provided by Supab
 
 ## Email Notifications
 
-After every successful quote submission and cart submission, the backend sends an internal HTML email notification to Signature By Sarah. The email is never sent to the customer.
+After every successful quote submission and cart submission, the backend sends settings-controlled HTML notifications to Signature By Sarah and to the customer when the respective notification setting is enabled. The customer email is sent to `guestEmail` for guest quotes, to the authenticated account email for customer quotes, and to the authenticated account email for cart submissions.
 
-The notification includes the customer's name, email, phone, preferred contact method, order details, and a link to the admin panel. Emails are sent via Resend using the `RESEND_API_KEY` environment variable. If the email fails to send, the API response is not affected — the submission is already committed to the database.
+Customer emails include the customer name, order/reference number, status, item details, available total, and a tracking link built from `FRONTEND_URL`: `/tracking/quote/:orderNumber` for quotes and `/tracking/cart/:orderNumber` for cart orders. Internal emails retain the customer/contact details, order details, and exact admin dashboard link built from `ADMIN_URL`.
+
+Emails are sent through Resend using `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL` sender. Resend API rejections are logged with recipient and error details. Delivery failures do not affect the API response or roll back an already committed submission.
 
 The branded email template is defined in `src/utils/emailBrand.ts` (shared constants and layout helpers), `src/utils/cartSubmissionEmail.ts` (cart-specific template), and `src/utils/quoteSubmissionEmail.ts` (quote-specific template).
 
@@ -196,6 +202,7 @@ Authentication labels:
 
 | Method | Route | Auth | Purpose / usage |
 | --- | --- | --- | --- |
+| `GET` | `/api/admin/products` | Admin/Super Admin token | Lists every non-deleted product for administration, including draft, published, and archived products. It does not apply public published-only visibility restrictions. Each product includes images, collections, materials, colors, and sizes. |
 | `POST` | `/api/admin/products` | Admin/Super Admin token | Creates a product. |
 | `PATCH` | `/api/admin/products/:id` | Admin/Super Admin token | Partially updates an active product. |
 | `DELETE` | `/api/admin/products/:id` | Admin/Super Admin token | Soft-deletes a product by setting `deleted_at`. |
@@ -206,6 +213,8 @@ Authentication labels:
 | `POST` | `/api/admin/products/:id/variants` | Admin/Super Admin token | Adds a product variant. |
 | `PATCH` | `/api/admin/products/:id/variants/:variantId` | Admin/Super Admin token | Partially updates a product variant. |
 | `DELETE` | `/api/admin/products/:id/variants/:variantId` | Admin/Super Admin token | Removes a product variant. |
+
+`GET /api/products` remains public and returns only published, non-deleted products. `GET /api/admin/products` is protected for `admin` and `super_admin` and returns all non-deleted catalogue records. Its response is `{ "success": true, "message": "Products retrieved", "data": [...] }`; every product record includes its administrative fields plus `images`, `collections`, `materials`, `colors`, and `sizes` arrays.
 
 Create a product:
 
@@ -583,7 +592,7 @@ Valid admin status transitions:
 
 ### Quote email notification
 
-After every quote submission — guest or authenticated — an internal notification email is sent to Signature By Sarah. The email includes:
+After every quote submission — guest or authenticated — the existing internal notification email is sent to Signature By Sarah, and the customer confirmation email is sent when `notify_customer_on_quote` is enabled. The customer email includes the quote reference, current status, submitted items, available estimated total, and a `FRONTEND_URL/tracking/quote/:orderNumber` link. The internal email includes:
 
 - Customer name, email, phone, and preferred contact method
 - Quote reference number and status
@@ -775,7 +784,7 @@ Customer immediately has a new empty active cart
 
 ### Cart email notification
 
-After every successful cart submission, an internal notification email is sent to Signature By Sarah. The email includes the customer's name, email, phone, preferred contact method, all cart items with snapshots, the order total, and a link to the admin panel. The email is fire-and-forget and does not affect the API response.
+After every successful cart submission, the existing internal notification email is sent to Signature By Sarah and the customer confirmation email is sent when `notify_customer_on_cart` is enabled. The customer email includes the order number, current status, cart item snapshots, total, and a `FRONTEND_URL/tracking/cart/:orderNumber` link. The internal email includes the customer's name, email, phone, preferred contact method, all cart items with snapshots, the order total, and an `ADMIN_URL` dashboard link. Delivery is non-blocking and cannot undo the submitted cart.
 
 ## Order administration, tracking, payments, and notifications
 
@@ -829,7 +838,7 @@ Both accept `{ "isRead": true }` or `{ "isRead": false }`.
 
 Admin and super-admin users can use `GET /api/admin/settings` and `PATCH /api/admin/settings/:key`. `PATCH` accepts `value` (a string, boolean, or `null`) and/or `valueJson`. Notification keys validate booleans; `notification_email` validates email; keys ending in `_url` validate URLs.
 
-Quote, cart, contact, and academy notifications read the existing notification settings. Database writes complete first; Resend failures are logged and do not roll back a submission or status update. Customer emails link to the configured `FRONTEND_URL` tracking page and admin emails use configured `ADMIN_URL` dashboard links.
+Quote, cart, contact, and academy notifications read the existing notification settings. Database writes complete first; Resend failures are logged and do not roll back a submission or status update. Customer emails link to configured `FRONTEND_URL` tracking pages (`/tracking/quote/:orderNumber` and `/tracking/cart/:orderNumber`), and admin emails use configured `ADMIN_URL` dashboard links.
 
 ## Favorites
 

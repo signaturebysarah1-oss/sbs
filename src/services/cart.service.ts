@@ -141,6 +141,7 @@ async function sendCartEmails(
       status: 'submitted',
       submittedAt: historyRecord.completedAt,
       totalSnapshot: historyRecord.totalSnapshot,
+      items: historyRecord.items,
     });
     emails.push(sendEmail({
       to: user.email,
@@ -206,7 +207,7 @@ export async function changeCartOrderStatus(
   // Send customer status email (fire-and-forget)
   const settings = await getNotificationSettings();
   if (settings.notifyCustomerOnOrderStatus && updatedOrder.customerEmail) {
-    const trackingUrl = `${env.frontendUrl}/track?ref=${encodeURIComponent(updatedOrder.orderNumber ?? cartHistoryId)}&type=order`;
+    const trackingUrl = `${env.frontendUrl}/tracking/cart/${encodeURIComponent(updatedOrder.orderNumber ?? cartHistoryId)}`;
     const html = buildCustomerStatusEmail({
       customerName: updatedOrder.customerName ?? 'Valued Customer',
       orderNumber: updatedOrder.orderNumber ?? cartHistoryId,

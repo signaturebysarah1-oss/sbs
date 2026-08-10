@@ -12,6 +12,7 @@ import type {
 import type {
   AdminProduct,
   AdminProductDetails,
+  AdminProductCatalogueItem,
   CreateProductImageInput,
   CreateProductInput,
   ManagedProductImage,
@@ -331,6 +332,69 @@ function rowToAdminProduct(row: Record<string, unknown>): AdminProduct {
     createdAt: (row['created_at'] as Date).toISOString(),
     updatedAt: (row['updated_at'] as Date).toISOString(),
   };
+}
+
+function rowToAdminProductCatalogue(row: Record<string, unknown>): AdminProductCatalogueItem {
+  const images = parseJsonAgg<Record<string, unknown>>(row['images']);
+  const collections = parseJsonAgg<Record<string, unknown>>(row['collections']);
+  const materials = parseJsonAgg<Record<string, unknown>>(row['materials']);
+  const colors = parseJsonAgg<Record<string, unknown>>(row['colors']);
+  const sizes = parseJsonAgg<number | string>(row['sizes']).map(Number);
+  return {
+    ...rowToAdminProduct(row),
+    images: images.map((image) => ({
+      id: image['id'] as string,
+      imageUrl: image['image_url'] as string,
+      imagePublicId: image['image_public_id'] as string,
+      altText: (image['alt_text'] as string | null) ?? null,
+      sortOrder: image['sort_order'] as number,
+      isPrimary: image['is_primary'] as boolean,
+    })),
+    collections: collections.map((collection) => ({
+      id: collection['id'] as string,
+      name: collection['name'] as string,
+      slug: collection['slug'] as string,
+    })),
+    materials: materials.map((material) => ({
+      id: material['id'] as string,
+      name: material['name'] as string,
+      slug: material['slug'] as string,
+    })),
+    colors: colors.map((color) => ({
+      id: color['id'] as string,
+      name: color['name'] as string,
+      hexCode: (color['hex_code'] as string | null) ?? null,
+      hex: (color['hex_code'] as string | null) ?? null,
+    })),
+    sizes,
+  };
+}
+
+const ADMIN_PRODUCT_AGGREGATES = PRODUCT_AGGREGATES.replace('AND s.is_active = true', '');
+const ADMIN_PRODUCT_JOINS = `
+  LEFT JOIN product_images pi        ON pi.product_id = p.id
+  LEFT JOIN product_collections pc   ON pc.product_id = p.id
+  LEFT JOIN collections c            ON c.id = pc.collection_id
+  LEFT JOIN product_materials pm     ON pm.product_id = p.id
+  LEFT JOIN materials m              ON m.id = pm.material_id
+  LEFT JOIN product_colors pcol      ON pcol.product_id = p.id
+  LEFT JOIN colors col               ON col.id = pcol.color_id
+`;
+
+export async function findAllProductsForAdmin(): Promise<AdminProductCatalogueItem[]> {
+  const result = await pool.query(
+    `SELECT
+       p.id, p.name, p.slug, p.description, p.category, p.gender, p.base_price,
+       p.is_customizable, p.status, p.is_featured, p.is_hero, p.sort_order,
+       p.meta_title, p.meta_description, p.created_at, p.updated_at,
+       ${ADMIN_PRODUCT_AGGREGATES}
+     FROM products p
+     ${ADMIN_PRODUCT_JOINS}
+     WHERE p.deleted_at IS NULL
+     GROUP BY p.id
+     ORDER BY p.created_at DESC`,
+  );
+  return (result.rows as Record<string, unknown>[]).map(rowToAdminProductCatalogue);
 }
 
 async function getProductOptions(client: PoolClient, productId: string): Promise<Pick<AdminProductDetails, 'colors' | 'materials' | 'sizes'>> {

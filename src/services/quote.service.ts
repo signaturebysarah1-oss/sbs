@@ -72,6 +72,7 @@ async function sendQuoteCustomerEmail(
     submittedAt: quote.submittedAt,
     customerNotes: quote.customerNotes,
     isGuest,
+    items: quote.items,
   });
   await sendEmail({
     to: customerEmail,
@@ -268,7 +269,7 @@ export async function changeQuoteStatus(
   // Send customer status email (fire-and-forget)
   const settings = await getNotificationSettings();
   if (settings.notifyCustomerOnOrderStatus && updated.customerEmail) {
-    const trackingUrl = `${env.frontendUrl}/track?ref=${encodeURIComponent(updated.referenceNumber)}&type=quote`;
+    const trackingUrl = `${env.frontendUrl}/tracking/quote/${encodeURIComponent(updated.referenceNumber)}`;
     const html = buildCustomerStatusEmail({
       customerName: updated.customerName ?? 'Valued Customer',
       orderNumber: updated.referenceNumber,

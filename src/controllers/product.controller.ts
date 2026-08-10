@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import {
   getAllProducts,
+  getAllProductsForAdmin,
   getProductBySlug,
   getFeaturedProducts,
   getHeroProducts,
@@ -42,6 +43,18 @@ export async function listProducts(
     if (gender && !['male', 'female', 'unisex'].includes(gender)) throw AppError.badRequest('gender must be male, female, or unisex');
     const products = await getAllProducts({ color: getString('color'), collection: getString('collection'), category: getString('category'), size: getString('size'), material: getString('material'), gender: gender as 'male' | 'female' | 'unisex' | undefined, sort: sort as ProductFilter['sort'] });
     sendSuccess(res, 'Products retrieved', products);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listAdminProducts(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, 'Products retrieved', await getAllProductsForAdmin());
   } catch (err) {
     next(err);
   }

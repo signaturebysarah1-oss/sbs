@@ -59,6 +59,11 @@ export interface AdminProductDetails extends AdminProduct {
   sizes: number[];
 }
 
+export interface AdminProductCatalogueItem extends AdminProductDetails {
+  images: import('./catalog.types.js').ProductImage[];
+  collections: import('./catalog.types.js').CollectionRef[];
+}
+
 export interface CreateProductImageInput {
   imageUrl: string;
   imagePublicId: string;

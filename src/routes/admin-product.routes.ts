@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   createAdminProduct,
+  listAdminProducts,
   createAdminProductImage,
   createAdminProductVariant,
   deleteAdminProduct,
@@ -18,6 +19,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireRole('admin', 'super_admin'));
 
+router.get('/', listAdminProducts);
 router.post('/', createAdminProduct);
 router.patch('/:id', updateAdminProduct);
 router.delete('/:id', deleteAdminProduct);

@@ -1,5 +1,6 @@
 import {
   findPublishedProducts,
+  findAllProductsForAdmin,
   findProductBySlug,
   findFeaturedProducts,
   findHeroProducts,
@@ -20,6 +21,7 @@ import type { Product, ProductSummary } from '../types/catalog.types.js';
 import type {
   AdminProduct,
   AdminProductDetails,
+  AdminProductCatalogueItem,
   CreateProductImageInput,
   CreateProductInput,
   ManagedProductImage,
@@ -31,6 +33,10 @@ import type {
 
 export async function getAllProducts(filters?: ProductFilter): Promise<ProductSummary[]> {
   return findPublishedProducts(filters);
+}
+
+export async function getAllProductsForAdmin(): Promise<AdminProductCatalogueItem[]> {
+  return findAllProductsForAdmin();
 }
 
 export async function getProductBySlug(slug: string): Promise<Product> {

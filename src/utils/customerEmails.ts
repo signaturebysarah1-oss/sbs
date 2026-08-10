@@ -10,6 +10,8 @@ import {
   ctaButton,
 } from './emailBrand.js';
 import { env } from '../config/env.js';
+import type { QuoteItem } from '../types/quote.types.js';
+import type { CartHistoryItem } from '../types/cart.types.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -58,6 +60,29 @@ function orderSummaryBlock(opts: {
   <div style="margin-bottom:32px;"></div>`;
 }
 
+function itemSummaryBlock(items: Array<QuoteItem | CartHistoryItem>): string {
+  if (items.length === 0) return '';
+  const rows = items.map((item) => {
+    const quoteItem = 'productNameSnapshot' in item ? item : item;
+    const name = quoteItem.productNameSnapshot ?? ('shoeNameSnapshot' in quoteItem ? quoteItem.shoeNameSnapshot : null) ?? 'Custom Item';
+    const size = 'size' in quoteItem ? quoteItem.size : quoteItem.selectedSize;
+    const color = 'colorNameSnapshot' in quoteItem ? quoteItem.colorNameSnapshot : quoteItem.selectedColor;
+    const material = 'materialNameSnapshot' in quoteItem ? quoteItem.materialNameSnapshot : quoteItem.selectedMaterial;
+    const price = quoteItem.unitPriceSnapshot == null ? 'To be confirmed' : formatPrice(quoteItem.unitPriceSnapshot);
+    return `<tr>
+      <td style="padding:8px 0;font-family:Arial,sans-serif;color:${BRAND.black};">${val(name)}</td>
+      <td style="padding:8px 0;font-family:Arial,sans-serif;color:#666;text-align:center;">${quoteItem.quantity}</td>
+      <td style="padding:8px 0;font-family:Arial,sans-serif;color:#666;text-align:right;">${price}</td>
+      <td style="padding:8px 0;font-family:Arial,sans-serif;color:#666;text-align:right;">${[size != null ? `Size ${size}` : null, color, material].filter(Boolean).join(' · ')}</td>
+    </tr>`;
+  }).join('');
+  return `<h2 style="margin:0 0 14px 0;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#888;font-family:Arial,sans-serif;font-weight:400;">Items</h2>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-bottom:32px;">
+    <thead><tr><th align="left" style="padding-bottom:8px;font-size:11px;color:#888;font-family:Arial,sans-serif;">ITEM</th><th style="padding-bottom:8px;font-size:11px;color:#888;font-family:Arial,sans-serif;">QTY</th><th align="right" style="padding-bottom:8px;font-size:11px;color:#888;font-family:Arial,sans-serif;">PRICE</th><th align="right" style="padding-bottom:8px;font-size:11px;color:#888;font-family:Arial,sans-serif;">DETAILS</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
 // ─── Quote confirmation (customer) ────────────────────────────────────────────
 
 export interface CustomerQuoteEmailData {
@@ -67,10 +92,12 @@ export interface CustomerQuoteEmailData {
   submittedAt: string;
   customerNotes: string | null;
   isGuest: boolean;
+  items: QuoteItem[];
 }
 
 export function buildCustomerQuoteEmail(data: CustomerQuoteEmailData): string {
-  const trackingUrl = `${env.frontendUrl}/track?ref=${encodeURIComponent(data.referenceNumber)}&type=quote`;
+  const trackingUrl = `${env.frontendUrl}/tracking/quote/${encodeURIComponent(data.referenceNumber)}`;
+  const total = data.items.reduce((sum, item) => sum + (item.unitPriceSnapshot ?? 0) * item.quantity, 0);
 
   const bodyHtml = `
     <p style="margin:0 0 24px 0;font-size:15px;color:${BRAND.black};font-family:Arial,sans-serif;line-height:1.6;">
@@ -85,6 +112,8 @@ export function buildCustomerQuoteEmail(data: CustomerQuoteEmailData): string {
       notes: data.customerNotes,
       trackingUrl,
     })}
+    ${itemSummaryBlock(data.items)}
+    ${total > 0 ? `<p style="margin:0 0 24px 0;font-size:16px;color:${BRAND.black};font-family:Arial,sans-serif;"><strong>Estimated Total: ${formatPrice(total)}</strong></p>` : ''}
   `;
 
   return customerEmailShell({
@@ -104,10 +133,11 @@ export interface CustomerCartEmailData {
   status: string;
   submittedAt: string;
   totalSnapshot: number;
+  items: CartHistoryItem[];
 }
 
 export function buildCustomerCartEmail(data: CustomerCartEmailData): string {
-  const trackingUrl = `${env.frontendUrl}/track?ref=${encodeURIComponent(data.orderNumber)}&type=order`;
+  const trackingUrl = `${env.frontendUrl}/tracking/cart/${encodeURIComponent(data.orderNumber)}`;
 
   const bodyHtml = `
     <p style="margin:0 0 24px 0;font-size:15px;color:${BRAND.black};font-family:Arial,sans-serif;line-height:1.6;">
@@ -122,6 +152,7 @@ export function buildCustomerCartEmail(data: CustomerCartEmailData): string {
       notes: null,
       trackingUrl,
     })}
+    ${itemSummaryBlock(data.items)}
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
            style="border-collapse:collapse;margin-top:8px;margin-bottom:32px;">
       <tr>
