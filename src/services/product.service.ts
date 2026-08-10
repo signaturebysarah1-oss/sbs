@@ -49,9 +49,7 @@ export async function getHeroProducts(): Promise<ProductSummary[]> {
 
 export async function createManagedProduct(input: CreateProductInput): Promise<AdminProductDetails> {
   if (input.status === 'published') {
-    if (!input.name) throw AppError.badRequest('name is required to publish a product');
-    if (!input.slug) throw AppError.badRequest('slug is required to publish a product');
-    if (input.basePrice == null) throw AppError.badRequest('basePrice is required to publish a product');
+    assertPublishableProduct(input);
   }
   return createProduct(input);
 }
@@ -67,13 +65,29 @@ export async function updateManagedProduct(
     const name = input.name !== undefined ? input.name : current.name;
     const slug = input.slug !== undefined ? input.slug : current.slug;
     const basePrice = input.basePrice !== undefined ? input.basePrice : current.basePrice;
-    if (!name) throw AppError.badRequest('name is required to publish a product');
-    if (!slug) throw AppError.badRequest('slug is required to publish a product');
-    if (basePrice == null) throw AppError.badRequest('basePrice is required to publish a product');
+    assertPublishableProduct({
+      name,
+      slug,
+      basePrice,
+      isCustomizable: input.isCustomizable !== undefined ? input.isCustomizable : current.isCustomizable,
+      isFeatured: input.isFeatured !== undefined ? input.isFeatured : current.isFeatured,
+      isHero: input.isHero !== undefined ? input.isHero : current.isHero,
+      sortOrder: input.sortOrder !== undefined ? input.sortOrder : current.sortOrder,
+    });
   }
   const product = await updateProductById(id, input);
   if (!product) throw AppError.notFound('Product not found');
   return product;
+}
+
+function assertPublishableProduct(input: CreateProductInput): void {
+  if (!input.name) throw AppError.badRequest('name is required to publish a product');
+  if (!input.slug) throw AppError.badRequest('slug is required to publish a product');
+  if (input.basePrice == null) throw AppError.badRequest('basePrice is required to publish a product');
+  if (input.isCustomizable == null) throw AppError.badRequest('isCustomizable is required to publish a product');
+  if (input.isFeatured == null) throw AppError.badRequest('isFeatured is required to publish a product');
+  if (input.isHero == null) throw AppError.badRequest('isHero is required to publish a product');
+  if (input.sortOrder == null) throw AppError.badRequest('sortOrder is required to publish a product');
 }
 
 export async function removeManagedProduct(id: string): Promise<void> {

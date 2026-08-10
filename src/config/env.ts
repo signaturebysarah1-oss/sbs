@@ -30,6 +30,7 @@ export const env = {
   adminUrl: requireEnv('ADMIN_URL'),
 
   resendApiKey: requireEnv('RESEND_API_KEY'),
+  resendFromEmail: requireEnv('RESEND_FROM_EMAIL'),
   notificationEmail: process.env['NOTIFICATION_EMAIL'] ?? 'signaturebysarah1@gmail.com',
 
   get isProduction() {

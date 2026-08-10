@@ -321,10 +321,13 @@ function rowToAdminProduct(row: Record<string, unknown>): AdminProduct {
     category: (row['category'] as string | null) ?? null,
     gender: (row['gender'] as AdminProduct['gender']) ?? null,
     basePrice: row['base_price'] == null ? null : parseFloat(row['base_price'] as string),
-    isCustomizable: row['is_customizable'] as boolean,
+    isCustomizable: (row['is_customizable'] as boolean | null) ?? null,
     status: row['status'] as AdminProduct['status'],
-    isFeatured: row['is_featured'] as boolean,
-    isHero: row['is_hero'] as boolean,
+    isFeatured: (row['is_featured'] as boolean | null) ?? null,
+    isHero: (row['is_hero'] as boolean | null) ?? null,
+    sortOrder: row['sort_order'] == null ? null : row['sort_order'] as number,
+    metaTitle: (row['meta_title'] as string | null) ?? null,
+    metaDescription: (row['meta_description'] as string | null) ?? null,
     createdAt: (row['created_at'] as Date).toISOString(),
     updatedAt: (row['updated_at'] as Date).toISOString(),
   };
@@ -417,10 +420,10 @@ export async function createProduct(input: CreateProductInput): Promise<AdminPro
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO products
-         (name, slug, description, category, gender, base_price, is_customizable, status, is_featured, is_hero)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (name, slug, description, category, gender, base_price, is_customizable, status, is_featured, is_hero, sort_order, meta_title, meta_description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
-                 is_featured, is_hero, created_at, updated_at`,
+                 is_featured, is_hero, sort_order, meta_title, meta_description, created_at, updated_at`,
       [
         input.name ?? null,
         input.slug ?? null,
@@ -428,10 +431,13 @@ export async function createProduct(input: CreateProductInput): Promise<AdminPro
         input.category ?? null,
         input.gender ?? null,
         input.basePrice ?? null,
-        input.isCustomizable ?? false,
+        input.isCustomizable ?? null,
         input.status ?? 'draft',
-        input.isFeatured ?? false,
-        input.isHero ?? false,
+        input.isFeatured ?? null,
+        input.isHero ?? null,
+        input.sortOrder ?? null,
+        input.metaTitle ?? null,
+        input.metaDescription ?? null,
       ],
     );
     const product = result.rows[0] as Record<string, unknown>;
@@ -458,7 +464,8 @@ export async function updateProductById(
 ): Promise<AdminProductDetails | null> {
   const fieldMap: Record<string, string> = {
     name: 'name', slug: 'slug', description: 'description', category: 'category', gender: 'gender', basePrice: 'base_price',
-    isCustomizable: 'is_customizable', status: 'status', isFeatured: 'is_featured', isHero: 'is_hero',
+    isCustomizable: 'is_customizable', status: 'status', isFeatured: 'is_featured', isHero: 'is_hero', sortOrder: 'sort_order',
+    metaTitle: 'meta_title', metaDescription: 'meta_description',
   };
   const entries = (Object.entries(input) as [string, unknown][])
     .filter(([key, value]) => value !== undefined && key in fieldMap);
@@ -472,14 +479,14 @@ export async function updateProductById(
         `UPDATE products SET ${assignments.join(', ')}
          WHERE id = $${values.length + 1} AND deleted_at IS NULL
          RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
-                   is_featured, is_hero, created_at, updated_at`,
+                   is_featured, is_hero, sort_order, meta_title, meta_description, created_at, updated_at`,
         [...values, id],
       )
       : await client.query(
         `UPDATE products SET updated_at = now()
          WHERE id = $1 AND deleted_at IS NULL
          RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
-                   is_featured, is_hero, created_at, updated_at`,
+                   is_featured, is_hero, sort_order, meta_title, meta_description, created_at, updated_at`,
         [id],
       );
     if (result.rows.length === 0) { await client.query('ROLLBACK'); return null; }

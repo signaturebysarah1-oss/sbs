@@ -20,10 +20,13 @@ export interface CreateProductInput {
   category?: string | null;
   gender?: 'male' | 'female' | 'unisex' | null;
   basePrice?: number | null;
-  isCustomizable?: boolean;
+  isCustomizable?: boolean | null;
   status?: CatalogStatus;
-  isFeatured?: boolean;
-  isHero?: boolean;
+  isFeatured?: boolean | null;
+  isHero?: boolean | null;
+  sortOrder?: number | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
   colors?: CreateProductColorInput[];
   materials?: CreateProductMaterialInput[];
   sizes?: number[];
@@ -39,10 +42,13 @@ export interface AdminProduct {
   category: string | null;
   gender: 'male' | 'female' | 'unisex' | null;
   basePrice: number | null;
-  isCustomizable: boolean;
+  isCustomizable: boolean | null;
   status: CatalogStatus;
-  isFeatured: boolean;
-  isHero: boolean;
+  isFeatured: boolean | null;
+  isHero: boolean | null;
+  sortOrder: number | null;
+  metaTitle: string | null;
+  metaDescription: string | null;
   createdAt: string;
   updatedAt: string;
 }
