@@ -6,7 +6,6 @@ export const BRAND = {
   offWhite: '#F8F6F2',
   gray: '#EDEAE4',
   logoUrl: 'https://res.cloudinary.com/demo/image/upload/v_placeholder/sbs-logo.png',
-  adminBaseUrl: 'https://sb-admin.com',
 } as const;
 
 export function formatPrice(kobo: number): string {

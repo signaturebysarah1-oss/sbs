@@ -1,9 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import { createAcademyRegistrationSchema } from '../validators/academy.validator.js';
+import { patchIsReadSchema } from '../validators/academy.validator.js';
 import {
   getAcademyRegistrationById,
   getAllAcademyRegistrations,
   registerForAcademy,
+  setAcademyRegistrationIsRead,
 } from '../services/academy.service.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
@@ -25,6 +27,15 @@ export async function createAcademyRegistration(
   } catch (err) {
     next(err);
   }
+}
+
+export async function updateAdminAcademyApplicationIsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = patchIsReadSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    await setAcademyRegistrationIsRead(req.params['id'] as string, parsed.data.isRead);
+    sendSuccess(res, 'Academy application read status updated');
+  } catch (err) { next(err); }
 }
 
 export async function listAdminAcademyApplications(

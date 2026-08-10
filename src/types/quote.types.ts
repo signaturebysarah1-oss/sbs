@@ -1,7 +1,9 @@
 // ─── Status ───────────────────────────────────────────────────────────────────
-
+// Status is now a flexible string — the admin decides the actual business values.
+// The legacy enum values remain the defaults but are no longer enforced by DB.
 export const QUOTE_STATUSES = ['pending', 'reviewing', 'approved', 'completed', 'cancelled'] as const;
-export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+export type QuoteStatus = string;  // flexible — not restricted to the above
+export type QuoteStatusLegacy = (typeof QUOTE_STATUSES)[number];
 
 export const CUSTOMER_QUOTE_STATUSES = ['pending', 'completed'] as const;
 export type CustomerQuoteStatus = (typeof CUSTOMER_QUOTE_STATUSES)[number];
@@ -51,8 +53,8 @@ export interface UpdateQuoteStatusInput {
 
 export interface QuoteStatusHistoryEntry {
   id: string;
-  oldStatus: QuoteStatus | null;
-  newStatus: QuoteStatus;
+  oldStatus: string | null;
+  newStatus: string;
   changedBy: string | null;       // profiles.id
   changedByName: string | null;   // profiles.full_name — joined for display
   note: string | null;
@@ -85,6 +87,12 @@ export interface QuoteRequest {
   customerStatus: CustomerQuoteStatus;
   contactMethod: 'email' | 'whatsapp' | null;
   customerNotes: string | null;
+  paymentUrl: string | null;
+  receiptUrl: string | null;
+  receiptPublicId: string | null;
+  shippingTrackingNumber: string | null;
+  shippingTrackingUrl: string | null;
+  shippingDetails: Record<string, unknown> | null;
   submittedAt: string;
   reviewedAt: string | null;
   completedAt: string | null;
@@ -105,3 +113,15 @@ export interface QuoteRequestAdmin extends QuoteRequest {
 // Summary for list views — no items or history
 export type QuoteRequestSummary = Omit<QuoteRequest, 'items' | 'statusHistory'>;
 export type QuoteRequestAdminSummary = Omit<QuoteRequestAdmin, 'items' | 'statusHistory'>;
+
+export interface UpdateQuotePaymentInput {
+  paymentUrl?: string | null;
+  receiptUrl?: string | null;
+  receiptPublicId?: string | null;
+}
+
+export interface UpdateQuoteFulfillmentInput {
+  shippingTrackingNumber?: string | null;
+  shippingTrackingUrl?: string | null;
+  shippingDetails?: Record<string, unknown> | null;
+}

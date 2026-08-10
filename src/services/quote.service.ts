@@ -8,11 +8,18 @@ import {
   updateQuoteStatus,
   updateCustomerQuoteWithItems,
   findPendingDraftByProfileId,
+  updateQuotePayment,
+  findQuoteByReferenceNumber,
+  findGuestQuoteByReferenceAndEmail,
+  updateQuoteReceiptByProfileId,
+  updateQuoteFulfillment,
 } from '../repositories/quote.repository.js';
 import { pool } from '../database/pool.js';
 import { AppError } from '../utils/AppError.js';
 import { sendEmail } from '../utils/mailer.js';
 import { buildQuoteSubmissionEmail } from '../utils/quoteSubmissionEmail.js';
+import { buildCustomerQuoteEmail, buildCustomerStatusEmail } from '../utils/customerEmails.js';
+import { getNotificationSettings } from '../utils/notificationSettings.js';
 import { env } from '../config/env.js';
 import type {
   CreateQuoteInput,
@@ -23,29 +30,52 @@ import type {
   QuoteRequestAdminSummary,
   QuoteStatus,
   UpdateCustomerQuoteInput,
+  UpdateQuotePaymentInput,
+  UpdateQuoteFulfillmentInput,
 } from '../types/quote.types.js';
 import type { AuthUser } from '../types/api.types.js';
 
-// ─── Email notification (fire-and-forget) ────────────────────────────────────
+// ─── Admin notification email ─────────────────────────────────────────────────
 
-async function sendQuoteNotificationEmail(quote: QuoteRequestAdmin, isGuest: boolean): Promise<void> {
-  const contactMethod = quote.contactMethod ?? 'email';
+async function sendQuoteAdminEmail(quote: QuoteRequestAdmin, isGuest: boolean, notificationEmail: string): Promise<void> {
   const html = buildQuoteSubmissionEmail({
     customerName: quote.customerName ?? 'Unknown',
     customerEmail: quote.customerEmail ?? '',
     customerPhone: quote.customerPhone ?? null,
-    contactMethod,
+    contactMethod: quote.contactMethod ?? 'email',
     referenceNumber: quote.referenceNumber,
+    quoteId: quote.id,
     status: quote.status,
     submittedAt: quote.submittedAt,
     customerNotes: quote.customerNotes,
     items: quote.items,
     isGuest,
   });
-
   await sendEmail({
-    to: env.notificationEmail,
+    to: notificationEmail,
     subject: `New Quote Submission — ${quote.referenceNumber}`,
+    html,
+  });
+}
+
+// ─── Customer confirmation email ──────────────────────────────────────────────
+
+async function sendQuoteCustomerEmail(
+  quote: QuoteRequestAdmin,
+  customerEmail: string,
+  isGuest: boolean,
+): Promise<void> {
+  const html = buildCustomerQuoteEmail({
+    customerName: quote.customerName ?? 'Valued Customer',
+    referenceNumber: quote.referenceNumber,
+    status: quote.status,
+    submittedAt: quote.submittedAt,
+    customerNotes: quote.customerNotes,
+    isGuest,
+  });
+  await sendEmail({
+    to: customerEmail,
+    subject: `Your Quote Request — ${quote.referenceNumber}`,
     html,
   });
 }
@@ -57,6 +87,8 @@ export async function submitQuote(
   input: CreateQuoteInput,
   user?: AuthUser,
 ): Promise<QuoteRequest> {
+  const settings = await getNotificationSettings();
+
   // ── Guest path ──────────────────────────────────────────────────────────────
   if (!profileId) {
     if (!input.guestName || !input.guestEmail) {
@@ -70,18 +102,21 @@ export async function submitQuote(
       guestPhone: input.guestPhone ?? null,
       customerNotes: input.customerNotes ?? null,
       items: input.items ?? [],
-      contactMethod: null,   // guests use guestPhone directly; no contactMethod stored
+      contactMethod: null,
       phoneNumber: null,
     });
 
     const quote = await findQuoteByIdAdmin(quoteId);
     if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
 
-    // Send notification — guest phone is already on the quote record
-    sendQuoteNotificationEmail(
-      { ...quote, contactMethod: 'whatsapp' },  // guests always provide phone
-      true,
-    ).catch((err: unknown) => console.error('[quote] Failed to send guest notification email:', err));
+    if (settings.notifyAdminOnQuote) {
+      sendQuoteAdminEmail({ ...quote, contactMethod: 'whatsapp' }, true, settings.notificationEmail)
+        .catch((err: unknown) => console.error('[quote] Failed to send admin email:', err));
+    }
+    if (settings.notifyCustomerOnQuote && input.guestEmail) {
+      sendQuoteCustomerEmail({ ...quote, contactMethod: 'whatsapp' }, input.guestEmail, true)
+        .catch((err: unknown) => console.error('[quote] Failed to send customer email:', err));
+    }
 
     return quote;
   }
@@ -90,42 +125,15 @@ export async function submitQuote(
   const contactMethod = input.contactMethod ?? 'email';
   const phoneNumber = input.phoneNumber ?? null;
 
-  // WhatsApp requires a phone number — either submitted now or already on profile
   if (contactMethod === 'whatsapp' && !phoneNumber) {
-    // Check if the profile already has a phone saved
-    const profileResult = await pool.query(
-      `SELECT phone FROM profiles WHERE id = $1`,
-      [profileId],
-    );
+    const profileResult = await pool.query(`SELECT phone FROM profiles WHERE id = $1`, [profileId]);
     const savedPhone = ((profileResult.rows[0] as Record<string, unknown>)?.['phone'] as string | null) ?? null;
-
     if (!savedPhone) {
-      throw AppError.badRequest(
-        'A phone number is required when WhatsApp is selected as the contact method',
-      );
+      throw AppError.badRequest('A phone number is required when WhatsApp is selected as the contact method');
     }
-
-    // Has a saved phone — proceed using it (no update needed)
-    const existingDraftId = await findPendingDraftByProfileId(profileId);
-    const quoteId = existingDraftId
-      ? await mergeIntoDraft(existingDraftId, profileId, input)
-      : await createQuoteWithItems({
-          profileId,
-          guestName: null,
-          guestEmail: null,
-          guestPhone: null,
-          customerNotes: input.customerNotes ?? null,
-          items: input.items ?? [],
-          contactMethod,
-          phoneNumber: null,
-        });
-
-    return finishAuthenticatedQuote(quoteId, profileId);
   }
 
-  // email method or whatsapp with a new phone number provided
   const existingDraftId = await findPendingDraftByProfileId(profileId);
-
   const quoteId = existingDraftId
     ? await mergeIntoDraft(existingDraftId, profileId, input)
     : await createQuoteWithItems({
@@ -139,35 +147,32 @@ export async function submitQuote(
         phoneNumber: contactMethod === 'whatsapp' ? phoneNumber : null,
       });
 
-  return finishAuthenticatedQuote(quoteId, profileId);
+  return finishAuthenticatedQuote(quoteId, profileId, settings);
 }
 
-async function mergeIntoDraft(
-  draftId: string,
-  profileId: string,
-  input: CreateQuoteInput,
-): Promise<string> {
-  await updateCustomerQuoteWithItems({
-    quoteId: draftId,
-    profileId,
-    customerNotes: input.customerNotes,
-    items: input.items,
-  });
+async function mergeIntoDraft(draftId: string, profileId: string, input: CreateQuoteInput): Promise<string> {
+  await updateCustomerQuoteWithItems({ quoteId: draftId, profileId, customerNotes: input.customerNotes, items: input.items });
   return draftId;
 }
 
 async function finishAuthenticatedQuote(
   quoteId: string,
   profileId: string,
+  settings: Awaited<ReturnType<typeof getNotificationSettings>>,
 ): Promise<QuoteRequest> {
   const quote = await findQuoteByIdAndProfileId(quoteId, profileId);
   if (!quote) throw new AppError('Quote created but could not be retrieved', 500);
 
   const adminQuote = await findQuoteByIdAdmin(quoteId);
   if (adminQuote) {
-    sendQuoteNotificationEmail(adminQuote, false).catch((err: unknown) =>
-      console.error('[quote] Failed to send authenticated notification email:', err),
-    );
+    if (settings.notifyAdminOnQuote) {
+      sendQuoteAdminEmail(adminQuote, false, settings.notificationEmail)
+        .catch((err: unknown) => console.error('[quote] Failed to send admin email:', err));
+    }
+    if (settings.notifyCustomerOnQuote && adminQuote.customerEmail) {
+      sendQuoteCustomerEmail(adminQuote, adminQuote.customerEmail, false)
+        .catch((err: unknown) => console.error('[quote] Failed to send customer email:', err));
+    }
   }
 
   return quote;
@@ -177,20 +182,13 @@ export async function getMyQuotes(profileId: string): Promise<QuoteRequestSummar
   return findQuotesByProfileId(profileId);
 }
 
-export async function getMyQuoteById(
-  id: string,
-  profileId: string,
-): Promise<QuoteRequest> {
+export async function getMyQuoteById(id: string, profileId: string): Promise<QuoteRequest> {
   const quote = await findQuoteByIdAndProfileId(id, profileId);
   if (!quote) throw AppError.notFound('Quote not found');
   return quote;
 }
 
-export async function updateMyQuote(
-  id: string,
-  profileId: string,
-  input: UpdateCustomerQuoteInput,
-): Promise<QuoteRequest> {
+export async function updateMyQuote(id: string, profileId: string, input: UpdateCustomerQuoteInput): Promise<QuoteRequest> {
   try {
     const updated = await updateCustomerQuoteWithItems({ quoteId: id, profileId, ...input });
     if (!updated) throw AppError.notFound('Quote not found');
@@ -205,11 +203,38 @@ export async function updateMyQuote(
   return quote;
 }
 
+export async function submitMyQuoteReceipt(
+  id: string,
+  profileId: string,
+  input: Pick<UpdateQuotePaymentInput, 'receiptUrl' | 'receiptPublicId'>,
+): Promise<QuoteRequest> {
+  if (!await updateQuoteReceiptByProfileId(id, profileId, input)) throw AppError.notFound('Quote not found');
+  return getMyQuoteById(id, profileId);
+}
+
+// ─── Tracking (public) ────────────────────────────────────────────────────────
+
+export async function trackQuoteByReference(referenceNumber: string): Promise<QuoteRequest> {
+  const quote = await findQuoteByReferenceNumber(referenceNumber);
+  if (!quote) throw AppError.notFound('Quote not found');
+  return quote;
+}
+
+export async function trackMyQuoteByReference(referenceNumber: string, profileId: string): Promise<QuoteRequest> {
+  const quote = await trackQuoteByReference(referenceNumber);
+  if (quote.profileId !== profileId) throw AppError.notFound('Quote not found');
+  return quote;
+}
+
+export async function trackGuestQuoteByReference(referenceNumber: string, email: string): Promise<QuoteRequest> {
+  const quote = await findGuestQuoteByReferenceAndEmail(referenceNumber, email);
+  if (!quote) throw AppError.notFound('Quote not found');
+  return quote;
+}
+
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
-export async function getAllQuotesAdmin(
-  status?: QuoteStatus,
-): Promise<QuoteRequestAdminSummary[]> {
+export async function getAllQuotesAdmin(status?: QuoteStatus): Promise<QuoteRequestAdminSummary[]> {
   return findAllQuotesAdmin(status);
 }
 
@@ -226,22 +251,7 @@ export async function changeQuoteStatus(
 ): Promise<QuoteRequestAdmin> {
   const currentStatus = await findQuoteCurrentStatus(quoteId);
   if (currentStatus === null) throw AppError.notFound('Quote not found');
-
-  if (currentStatus === input.status) {
-    throw AppError.badRequest(`Quote is already in status: ${input.status}`);
-  }
-
-  const validTransitions: Record<QuoteStatus, readonly QuoteStatus[]> = {
-    pending: ['reviewing', 'cancelled'],
-    reviewing: ['approved', 'cancelled'],
-    approved: ['completed', 'cancelled'],
-    completed: [],
-    cancelled: [],
-  };
-
-  if (!validTransitions[currentStatus].includes(input.status)) {
-    throw AppError.badRequest(`Cannot change quote status from ${currentStatus} to ${input.status}`);
-  }
+  if (currentStatus === input.status) throw AppError.badRequest(`Quote is already in status: ${input.status}`);
 
   const updatedStatus = await updateQuoteStatus({
     quoteId,
@@ -250,11 +260,42 @@ export async function changeQuoteStatus(
     changedByProfileId,
     note: input.note ?? null,
   });
-  if (!updatedStatus) {
-    throw AppError.conflict('Quote status was changed by another request; please retry');
-  }
+  if (!updatedStatus) throw AppError.conflict('Quote status was changed by another request; please retry');
 
   const updated = await findQuoteByIdAdmin(quoteId);
   if (!updated) throw AppError.notFound('Quote not found after update');
+
+  // Send customer status email (fire-and-forget)
+  const settings = await getNotificationSettings();
+  if (settings.notifyCustomerOnOrderStatus && updated.customerEmail) {
+    const trackingUrl = `${env.frontendUrl}/track?ref=${encodeURIComponent(updated.referenceNumber)}&type=quote`;
+    const html = buildCustomerStatusEmail({
+      customerName: updated.customerName ?? 'Valued Customer',
+      orderNumber: updated.referenceNumber,
+      orderType: 'Quote',
+      newStatus: input.status,
+      note: input.note ?? null,
+      trackingUrl,
+    });
+    sendEmail({
+      to: updated.customerEmail,
+      subject: `Your Quote Status Update — ${updated.referenceNumber}`,
+      html,
+    }).catch((err: unknown) => console.error('[quote] Failed to send status email:', err));
+  }
+
   return updated;
+}
+
+export async function setQuotePayment(id: string, input: UpdateQuotePaymentInput): Promise<QuoteRequestAdmin> {
+  const updated = await updateQuotePayment(id, input);
+  if (!updated) throw AppError.notFound('Quote not found');
+  const quote = await findQuoteByIdAdmin(id);
+  if (!quote) throw AppError.notFound('Quote not found after update');
+  return quote;
+}
+
+export async function setQuoteFulfillment(id: string, input: UpdateQuoteFulfillmentInput): Promise<QuoteRequestAdmin> {
+  if (!await updateQuoteFulfillment(id, input)) throw AppError.notFound('Quote not found');
+  return getQuoteByIdAdmin(id);
 }

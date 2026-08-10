@@ -315,12 +315,12 @@ export async function findPublishedProductsByIds(ids: string[]): Promise<Product
 function rowToAdminProduct(row: Record<string, unknown>): AdminProduct {
   return {
     id: row['id'] as string,
-    name: row['name'] as string,
-    slug: row['slug'] as string,
+    name: (row['name'] as string | null) ?? null,
+    slug: (row['slug'] as string | null) ?? null,
     description: (row['description'] as string | null) ?? null,
     category: (row['category'] as string | null) ?? null,
     gender: (row['gender'] as AdminProduct['gender']) ?? null,
-    basePrice: parseFloat(row['base_price'] as string),
+    basePrice: row['base_price'] == null ? null : parseFloat(row['base_price'] as string),
     isCustomizable: row['is_customizable'] as boolean,
     status: row['status'] as AdminProduct['status'],
     isFeatured: row['is_featured'] as boolean,
@@ -422,8 +422,16 @@ export async function createProduct(input: CreateProductInput): Promise<AdminPro
        RETURNING id, name, slug, description, category, gender, base_price, is_customizable, status,
                  is_featured, is_hero, created_at, updated_at`,
       [
-        input.name, input.slug, input.description, input.category ?? null, input.gender ?? null,
-        input.basePrice, input.isCustomizable, input.status, input.isFeatured, input.isHero,
+        input.name ?? null,
+        input.slug ?? null,
+        input.description ?? null,
+        input.category ?? null,
+        input.gender ?? null,
+        input.basePrice ?? null,
+        input.isCustomizable ?? false,
+        input.status ?? 'draft',
+        input.isFeatured ?? false,
+        input.isHero ?? false,
       ],
     );
     const product = result.rows[0] as Record<string, unknown>;
@@ -448,12 +456,12 @@ export async function updateProductById(
   id: string,
   input: UpdateProductInput,
 ): Promise<AdminProductDetails | null> {
-  const fieldMap: Record<Exclude<keyof UpdateProductInput, 'colors' | 'materials' | 'sizes'>, string> = {
+  const fieldMap: Record<string, string> = {
     name: 'name', slug: 'slug', description: 'description', category: 'category', gender: 'gender', basePrice: 'base_price',
     isCustomizable: 'is_customizable', status: 'status', isFeatured: 'is_featured', isHero: 'is_hero',
   };
-  const entries = (Object.entries(input) as [keyof UpdateProductInput, unknown][])
-    .filter(([key, value]) => value !== undefined && key in fieldMap) as [keyof typeof fieldMap, unknown][];
+  const entries = (Object.entries(input) as [string, unknown][])
+    .filter(([key, value]) => value !== undefined && key in fieldMap);
   const values = entries.map(([, value]) => value);
   const assignments = entries.map(([key], index) => `${fieldMap[key]} = $${index + 1}`);
   const client = await pool.connect();

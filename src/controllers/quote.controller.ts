@@ -9,8 +9,12 @@ import {
   getQuoteByIdAdmin,
   changeQuoteStatus,
   updateMyQuote as updateCustomerQuote,
+  submitMyQuoteReceipt,
+  setQuotePayment,
+  trackQuoteByReference,
+  setQuoteFulfillment,
 } from '../services/quote.service.js';
-import { createQuoteSchema, updateCustomerQuoteSchema, updateQuoteStatusSchema } from '../validators/quote.validator.js';
+import { createQuoteSchema, updateCustomerQuoteSchema, updateQuoteStatusSchema, updateQuotePaymentSchema, submitQuoteReceiptSchema, updateQuoteFulfillmentSchema } from '../validators/quote.validator.js';
 import { sendSuccess } from '../utils/response.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
@@ -93,6 +97,29 @@ export async function updateMyQuote(
   }
 }
 
+export async function submitQuoteReceipt(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = submitQuoteReceiptSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    const quote = await submitMyQuoteReceipt(req.params['id'] as string, resolvedUser(req).id, parsed.data);
+    sendSuccess(res, 'Quote receipt updated', quote);
+  } catch (err) { next(err); }
+}
+
+export async function trackMyQuote(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const quote = await trackQuoteByReference(req.params['orderNumber'] as string);
+    const total = quote.items.reduce((sum, item) => sum + (item.unitPriceSnapshot ?? 0) * item.quantity, 0);
+    sendSuccess(res, 'Quote tracking retrieved', {
+      orderNumber: quote.referenceNumber, orderType: 'quote', status: quote.status,
+      statusHistory: quote.statusHistory.map((entry) => ({ status: entry.newStatus, previousStatus: entry.oldStatus, note: entry.note, createdAt: entry.createdAt })),
+      submittedAt: quote.submittedAt, reviewedAt: quote.reviewedAt, completedAt: quote.completedAt, createdAt: quote.createdAt,
+      items: quote.items, total, paymentUrl: quote.paymentUrl, receiptUrl: quote.receiptUrl, receiptPublicId: quote.receiptPublicId,
+      shippingTrackingNumber: quote.shippingTrackingNumber, shippingTrackingUrl: quote.shippingTrackingUrl, shippingDetails: quote.shippingDetails,
+    });
+  } catch (err) { next(err); }
+}
+
 // ─── Admin handlers ───────────────────────────────────────────────────────────
 
 export async function listAllQuotes(
@@ -144,4 +171,21 @@ export async function updateQuoteStatus(
   } catch (err) {
     next(err);
   }
+}
+
+export async function updateAdminQuotePayment(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = updateQuotePaymentSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    const quote = await setQuotePayment(req.params['id'] as string, parsed.data);
+    sendSuccess(res, 'Quote payment updated', quote);
+  } catch (err) { next(err); }
+}
+
+export async function updateAdminQuoteFulfillment(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = updateQuoteFulfillmentSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    sendSuccess(res, 'Quote fulfillment updated', await setQuoteFulfillment(req.params['id'] as string, parsed.data));
+  } catch (err) { next(err); }
 }

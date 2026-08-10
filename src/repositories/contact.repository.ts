@@ -46,7 +46,17 @@ export async function findAllContactSubmissions(): Promise<AdminContactSubmissio
   return (result.rows as Record<string, unknown>[]).map(rowToAdminContactSubmission);
 }
 
-export async function findContactSubmissionById(id: string): Promise<AdminContactSubmission | null> {
+export async function patchContactSubmissionIsRead(id: string, isRead: boolean): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE contact_submissions SET is_read = $1 WHERE id = $2 RETURNING id`,
+    [isRead, id],
+  );
+  return result.rows.length > 0;
+}
+
+export async function findContactSubmissionById(
+  id: string,
+): Promise<AdminContactSubmission | null> {
   const result = await pool.query(
     `SELECT id, name, email, phone, subject, message, is_read, admin_notes, created_at
      FROM contact_submissions

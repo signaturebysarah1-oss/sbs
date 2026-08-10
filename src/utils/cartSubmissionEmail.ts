@@ -9,6 +9,7 @@ import {
   totalBlock,
   ctaButton,
 } from './emailBrand.js';
+import { env } from '../config/env.js';
 
 function cartItemRow(item: CartHistoryItem): string {
   const name = val(item.productNameSnapshot, 'Custom Item');
@@ -19,7 +20,7 @@ function cartItemRow(item: CartHistoryItem): string {
          <span style="color:#999;font-size:10px;display:block;padding:28px 0;text-align:center;">No image</span>
        </div>`;
 
-  const productLink = item.productId ? `${BRAND.adminBaseUrl}/product/${item.productId}` : null;
+  const productLink = item.productId ? `${env.adminUrl}/products/${item.productId}` : null;
   const itemTotal = formatPrice(item.unitPriceSnapshot * item.quantity);
 
   return `
@@ -51,6 +52,8 @@ export interface CartSubmissionEmailData {
   customerEmail: string;
   contactMethod: 'email' | 'whatsapp';
   phoneNumber: string | null;
+  orderNumber: string;
+  historyId: string;
   items: CartHistoryItem[];
   totalSnapshot: number;
   submittedCartId: string;
@@ -73,7 +76,7 @@ export function buildCartSubmissionEmail(data: CartSubmissionEmailData): string 
     ${data.items.map(cartItemRow).join('\n')}
 
     ${totalBlock(data.totalSnapshot)}
-    ${ctaButton(`${BRAND.adminBaseUrl}/orders`, 'View Order')}
+    ${ctaButton(`${env.adminUrl}/cart/history/${data.historyId}`, 'View Order')}
   `;
 
   return emailShell({

@@ -4,6 +4,8 @@ import {
   listAllQuotes,
   getAdminQuote,
   updateQuoteStatus,
+  updateAdminQuotePayment,
+  updateAdminQuoteFulfillment,
 } from '../controllers/quote.controller.js';
 
 const router = Router();
@@ -15,5 +17,7 @@ router.use(requireRole('admin', 'super_admin'));
 router.get('/', listAllQuotes);
 router.get('/:id', getAdminQuote);
 router.patch('/:id/status', updateQuoteStatus);
+router.patch('/:id/payment', updateAdminQuotePayment);
+router.patch('/:id/fulfillment', updateAdminQuoteFulfillment);
 
 export default router;

@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { CUSTOMER_QUOTE_STATUSES, QUOTE_STATUSES } from '../types/quote.types.js';
+import { CUSTOMER_QUOTE_STATUSES } from '../types/quote.types.js';
 
 // ─── Item schema ──────────────────────────────────────────────────────────────
-// All snapshot fields are optional — a draft item may be partially filled.
-// productId is nullable: a fully custom shoe may have no product record.
 
 const quoteItemSchema = z.object({
   productId: z.string().uuid().nullable().optional(),
@@ -39,8 +37,6 @@ const quoteItemSchema = z.object({
 }));
 
 // ─── Create / upsert draft schema ─────────────────────────────────────────────
-// Used for POST /api/quotes.
-// Items are optional — a customer can create an empty draft first.
 
 export const createQuoteSchema = z.object({
   guestName: z.string().trim().min(1).max(255).optional(),
@@ -59,10 +55,6 @@ export const createQuoteSchema = z.object({
 });
 
 // ─── Update customer quote schema ─────────────────────────────────────────────
-// Used for PATCH /api/quotes/:id.
-// When customerStatus = 'completed', each item must have at least a quantity.
-// Snapshot fields remain optional even at completion — the customer may not
-// know the exact product name or price; the admin resolves those.
 
 export const updateCustomerQuoteSchema = z.object({
   customerNotes: z.string().max(2000).nullable().optional(),
@@ -76,15 +68,37 @@ export const updateCustomerQuoteSchema = z.object({
   'At least one field must be provided',
 );
 
-// ─── Admin status update schema ───────────────────────────────────────────────
+// ─── Admin status update schema — flexible string, not a fixed enum ───────────
 
 export const updateQuoteStatusSchema = z.object({
-  status: z.enum(QUOTE_STATUSES as unknown as [string, ...string[]]).refine(
-    (v) => (QUOTE_STATUSES as readonly string[]).includes(v),
-    { message: `status must be one of: ${QUOTE_STATUSES.join(', ')}` },
-  ) as z.ZodType<(typeof QUOTE_STATUSES)[number]>,
+  status: z.string().trim().min(1, 'status is required').max(50),
   note: z.string().max(1000).nullable().optional(),
 });
+
+// ─── Admin payment/receipt schema ─────────────────────────────────────────────
+
+export const updateQuotePaymentSchema = z.object({
+  paymentUrl: z.string().url('paymentUrl must be a valid URL').nullable().optional(),
+  receiptUrl: z.string().url('receiptUrl must be a valid URL').nullable().optional(),
+  receiptPublicId: z.string().trim().max(255).nullable().optional(),
+}).refine(
+  (d) => d.paymentUrl !== undefined || d.receiptUrl !== undefined || d.receiptPublicId !== undefined,
+  'At least one payment field must be provided',
+);
+
+export const submitQuoteReceiptSchema = z.object({
+  receiptUrl: z.string().url('receiptUrl must be a valid URL').nullable().optional(),
+  receiptPublicId: z.string().trim().max(255).nullable().optional(),
+}).refine(
+  (d) => d.receiptUrl !== undefined || d.receiptPublicId !== undefined,
+  'receiptUrl or receiptPublicId must be provided',
+);
+
+export const updateQuoteFulfillmentSchema = z.object({
+  shippingTrackingNumber: z.string().trim().max(255).nullable().optional(),
+  shippingTrackingUrl: z.string().url('shippingTrackingUrl must be a valid URL').nullable().optional(),
+  shippingDetails: z.record(z.string(), z.unknown()).nullable().optional(),
+}).refine((d) => Object.values(d).some((value) => value !== undefined), 'At least one fulfillment field must be provided');
 
 export type CreateQuoteBody = z.infer<typeof createQuoteSchema>;
 export type UpdateCustomerQuoteBody = z.infer<typeof updateCustomerQuoteSchema>;

@@ -1,9 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import { createContactSubmissionSchema } from '../validators/contact.validator.js';
+import { patchIsReadSchema } from '../validators/contact.validator.js';
 import {
   getAllContactSubmissions,
   getContactSubmissionById,
   submitContactForm,
+  setContactSubmissionIsRead,
 } from '../services/contact.service.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
@@ -25,6 +27,15 @@ export async function createContactSubmission(
   } catch (err) {
     next(err);
   }
+}
+
+export async function updateAdminContactSubmissionIsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = patchIsReadSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    await setContactSubmissionIsRead(req.params['id'] as string, parsed.data.isRead);
+    sendSuccess(res, 'Contact submission read status updated');
+  } catch (err) { next(err); }
 }
 
 export async function listAdminContactSubmissions(

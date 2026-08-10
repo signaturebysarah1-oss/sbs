@@ -59,6 +59,14 @@ export async function findAllAcademyRegistrations(): Promise<AdminAcademyRegistr
   return (result.rows as Record<string, unknown>[]).map(rowToAdminAcademyRegistration);
 }
 
+export async function patchAcademyRegistrationIsRead(id: string, isRead: boolean): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE academy_registrations SET is_read = $1, updated_at = now() WHERE id = $2 RETURNING id`,
+    [isRead, id],
+  );
+  return result.rows.length > 0;
+}
+
 export async function findAcademyRegistrationById(
   id: string,
 ): Promise<AdminAcademyRegistration | null> {

@@ -8,6 +8,7 @@ import {
   customerDetailsBlock,
   ctaButton,
 } from './emailBrand.js';
+import { env } from '../config/env.js';
 
 function quoteItemRow(item: QuoteItem): string {
   const name = val(item.productNameSnapshot, val(item.shoeNameSnapshot, 'Custom Item'));
@@ -18,7 +19,7 @@ function quoteItemRow(item: QuoteItem): string {
          <span style="color:#999;font-size:10px;display:block;padding:28px 0;text-align:center;">No image</span>
        </div>`;
 
-  const productLink = item.productId ? `${BRAND.adminBaseUrl}/product/${item.productId}` : null;
+  const productLink = item.productId ? `${env.adminUrl}/products/${item.productId}` : null;
   const itemTotal =
     item.unitPriceSnapshot != null
       ? formatPrice(item.unitPriceSnapshot * item.quantity)
@@ -55,6 +56,7 @@ export interface QuoteSubmissionEmailData {
   customerPhone: string | null;
   contactMethod: 'email' | 'whatsapp';
   referenceNumber: string;
+  quoteId: string;
   status: string;
   submittedAt: string;
   customerNotes: string | null;
@@ -141,7 +143,7 @@ export function buildQuoteSubmissionEmail(data: QuoteSubmissionEmailData): strin
          </table>`
       : '<div style="margin-bottom:32px;"></div>'}
 
-    ${ctaButton(`${BRAND.adminBaseUrl}/quotes`, 'View Quote')}
+    ${ctaButton(`${env.adminUrl}/quotes/${data.quoteId}`, 'View Quote')}
   `;
 
   return emailShell({

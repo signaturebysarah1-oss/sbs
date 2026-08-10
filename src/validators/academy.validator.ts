@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export const patchIsReadSchema = z.object({
+  isRead: z.boolean(),
+});
+
 export const createAcademyRegistrationSchema = z.object({
   fullName: z.string().trim().min(1, 'fullName is required').max(255),
   email: z.string().trim().email('email must be a valid email address').max(255),

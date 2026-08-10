@@ -6,8 +6,10 @@ import {
   deleteCartItem,
   getCart,
   getCartHistory,
+  getCartHistoryItem,
   submitCart,
   updateCartItem,
+  submitCartReceipt,
 } from '../controllers/cart.controller.js';
 
 const router = Router();
@@ -15,6 +17,8 @@ const router = Router();
 router.use(requireAuth);
 router.get('/', getCart);
 router.get('/history', getCartHistory);
+router.get('/history/:id', getCartHistoryItem);
+router.patch('/history/:id/receipt', submitCartReceipt);
 router.post('/items', addCartItem);
 router.post('/submit', submitCart);
 router.patch('/items/:id', updateCartItem);

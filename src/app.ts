@@ -29,6 +29,9 @@ import homepageRoutes from './routes/homepage.routes.js';
 import adminHomepageRoutes from './routes/admin-homepage.routes.js';
 import customizationRoutes from './routes/customization.routes.js';
 import adminCustomizationRoutes from './routes/admin-customization.routes.js';
+import adminSettingsRoutes from './routes/admin-settings.routes.js';
+import adminCartRoutes from './routes/admin-cart.routes.js';
+import trackingRoutes from './routes/tracking.routes.js';
 const app = express();
 
 // ─── Security ─────────────────────────────────────────────────────────────────
@@ -68,6 +71,9 @@ app.use('/api/home', homepageRoutes);
 app.use('/api/admin/home', adminHomepageRoutes);
 app.use('/api/customizations', customizationRoutes);
 app.use('/api/admin/customizations', adminCustomizationRoutes);
+app.use('/api/admin/settings', adminSettingsRoutes);
+app.use('/api/admin/cart', adminCartRoutes);
+app.use('/api/tracking', trackingRoutes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 app.use(notFound);

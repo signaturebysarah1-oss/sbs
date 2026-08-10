@@ -48,6 +48,11 @@ export async function getHeroProducts(): Promise<ProductSummary[]> {
 }
 
 export async function createManagedProduct(input: CreateProductInput): Promise<AdminProductDetails> {
+  if (input.status === 'published') {
+    if (!input.name) throw AppError.badRequest('name is required to publish a product');
+    if (!input.slug) throw AppError.badRequest('slug is required to publish a product');
+    if (input.basePrice == null) throw AppError.badRequest('basePrice is required to publish a product');
+  }
   return createProduct(input);
 }
 
@@ -55,6 +60,17 @@ export async function updateManagedProduct(
   id: string,
   input: UpdateProductInput,
 ): Promise<AdminProductDetails> {
+  if (input.status === 'published') {
+    // Fetch current product to check existing values
+    const current = await updateProductById(id, {});
+    if (!current) throw AppError.notFound('Product not found');
+    const name = input.name !== undefined ? input.name : current.name;
+    const slug = input.slug !== undefined ? input.slug : current.slug;
+    const basePrice = input.basePrice !== undefined ? input.basePrice : current.basePrice;
+    if (!name) throw AppError.badRequest('name is required to publish a product');
+    if (!slug) throw AppError.badRequest('slug is required to publish a product');
+    if (basePrice == null) throw AppError.badRequest('basePrice is required to publish a product');
+  }
   const product = await updateProductById(id, input);
   if (!product) throw AppError.notFound('Product not found');
   return product;

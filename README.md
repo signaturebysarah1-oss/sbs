@@ -777,6 +777,60 @@ Customer immediately has a new empty active cart
 
 After every successful cart submission, an internal notification email is sent to Signature By Sarah. The email includes the customer's name, email, phone, preferred contact method, all cart items with snapshots, the order total, and a link to the admin panel. The email is fire-and-forget and does not affect the API response.
 
+## Order administration, tracking, payments, and notifications
+
+Apply migrations `011_product_draft_nullable_fields.sql`, `012_order_numbers_payment_settings.sql`, and `013_order_fulfillment_and_cart_item_variant_snapshot.sql` in numeric order before using these endpoints.
+
+All endpoints retain the standard response envelope: `{ "success": true, "message": "...", "data": {} }`.
+
+### Admin cart orders
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/admin/cart/history?customerId=&productId=&status=` | Lists submitted cart orders, with optional filters. |
+| `GET` | `/api/admin/cart/history/:id` | Returns one order, including customer details, item snapshot, payment/receipt fields, and status history. |
+| `PATCH` | `/api/admin/cart/history/:id/status` | Updates flexible status. Body: `{ "status": "shipped", "note": null }`. |
+| `PATCH` | `/api/admin/cart/history/:id/payment` | Updates payment/receipt fields. Body may include `paymentUrl`, `receiptUrl`, and `receiptPublicId`. |
+| `PATCH` | `/api/admin/cart/history/:id/fulfillment` | Updates optional `shippingTrackingNumber`, `shippingTrackingUrl`, and `shippingDetails`. |
+
+### Quote and cart payment/receipt endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `PATCH` | `/api/admin/quotes/:id/payment` | Admin updates quote payment/receipt fields. |
+| `PATCH` | `/api/admin/quotes/:id/fulfillment` | Admin updates quote shipping/tracking data. |
+| `PATCH` | `/api/quotes/:id/receipt` | Quote owner stores Cloudinary `receiptUrl` and optional `receiptPublicId`. |
+| `GET` | `/api/cart/history/:id` | Cart owner retrieves one submitted order with its status history. |
+| `PATCH` | `/api/cart/history/:id/receipt` | Cart owner stores Cloudinary `receiptUrl` and optional `receiptPublicId`. |
+
+Customers never upload files through this backend; receipt URLs/public IDs are supplied after frontend Cloudinary upload.
+
+### Customer tracking
+
+Cart tracking is ownership-checked, so an authenticated customer cannot retrieve another customer's cart order. Quote tracking uses the customer-facing quote reference from the email link and returns only the safe tracking response.
+
+| Method | Endpoint |
+| --- | --- |
+| `GET` | `/api/tracking/quote/:orderNumber` |
+| `GET` | `/api/tracking/cart/:orderNumber` |
+
+Tracking responses include the order number/type, flexible current status, safe status history, dates, complete snapshots, total, payment/receipt fields, and shipping data. They deliberately omit admin notes, customer profile data, and status-change actor data.
+
+### Contact and academy administration
+
+| Method | Endpoint |
+| --- | --- |
+| `PATCH` | `/api/admin/contact/:id/is-read` |
+| `PATCH` | `/api/admin/academy/applications/:id/is-read` |
+
+Both accept `{ "isRead": true }` or `{ "isRead": false }`.
+
+### Settings
+
+Admin and super-admin users can use `GET /api/admin/settings` and `PATCH /api/admin/settings/:key`. `PATCH` accepts `value` (a string, boolean, or `null`) and/or `valueJson`. Notification keys validate booleans; `notification_email` validates email; keys ending in `_url` validate URLs.
+
+Quote, cart, contact, and academy notifications read the existing notification settings. Database writes complete first; Resend failures are logged and do not roll back a submission or status update. Customer emails link to the configured `FRONTEND_URL` tracking page and admin emails use configured `ADMIN_URL` dashboard links.
+
 ## Favorites
 
 Favorites belong to authenticated profiles. Each profile can favorite a product only once.

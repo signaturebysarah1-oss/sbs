@@ -8,8 +8,16 @@ import {
   removeMyCartItem,
   submitMyCart,
   updateMyCartItem,
+  getAllCartOrdersAdmin,
+  getCartOrderByIdAdmin,
+  changeCartOrderStatus,
+  setCartOrderPayment,
+  getMyCartHistoryById,
+  submitMyCartReceipt,
+  trackMyCartOrderByNumber,
+  setCartOrderFulfillment,
 } from '../services/cart.service.js';
-import { addCartItemSchema, updateCartItemSchema, submitCartSchema } from '../validators/cart.validator.js';
+import { addCartItemSchema, updateCartItemSchema, submitCartSchema, updateCartOrderPaymentSchema, updateCartOrderStatusSchema, submitReceiptSchema, updateFulfillmentSchema } from '../validators/cart.validator.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
 import { sendSuccess } from '../utils/response.js';
@@ -105,6 +113,22 @@ export async function getCartHistory(
   }
 }
 
+export async function getCartHistoryItem(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const order = await getMyCartHistoryById(req.params['id'] as string, resolvedProfileId(req));
+    sendSuccess(res, 'Cart order retrieved', order);
+  } catch (err) { next(err); }
+}
+
+export async function submitCartReceipt(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = submitReceiptSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    const order = await submitMyCartReceipt(req.params['id'] as string, resolvedProfileId(req), parsed.data);
+    sendSuccess(res, 'Order receipt updated', order);
+  } catch (err) { next(err); }
+}
+
 export async function submitCart(
   req: MaybeAuthenticatedRequest,
   res: Response,
@@ -121,4 +145,60 @@ export async function submitCart(
   } catch (err) {
     next(err);
   }
+}
+
+export async function listAdminCartOrders(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const getString = (key: string) => typeof req.query[key] === 'string' ? req.query[key] as string : undefined;
+    const orders = await getAllCartOrdersAdmin({
+      profileId: getString('customerId'),
+      productId: getString('productId'),
+      status: getString('status'),
+    });
+    sendSuccess(res, 'Cart orders retrieved', orders);
+  } catch (err) { next(err); }
+}
+
+export async function getAdminCartOrder(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try { sendSuccess(res, 'Cart order retrieved', await getCartOrderByIdAdmin(req.params['id'] as string)); }
+  catch (err) { next(err); }
+}
+
+export async function updateAdminCartOrderStatus(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = updateCartOrderStatusSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    const order = await changeCartOrderStatus(req.params['id'] as string, resolvedProfileId(req), parsed.data);
+    sendSuccess(res, 'Cart order status updated', order);
+  } catch (err) { next(err); }
+}
+
+export async function updateAdminCartOrderPayment(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = updateCartOrderPaymentSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    const order = await setCartOrderPayment(req.params['id'] as string, parsed.data);
+    sendSuccess(res, 'Cart order payment updated', order);
+  } catch (err) { next(err); }
+}
+
+export async function updateAdminCartOrderFulfillment(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = updateFulfillmentSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    sendSuccess(res, 'Cart order fulfillment updated', await setCartOrderFulfillment(req.params['id'] as string, parsed.data));
+  } catch (err) { next(err); }
+}
+
+export async function trackMyCartOrder(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const order = await trackMyCartOrderByNumber(req.params['orderNumber'] as string, resolvedProfileId(req));
+    sendSuccess(res, 'Order tracking retrieved', {
+      orderNumber: order.orderNumber, orderType: 'cart', status: order.status,
+      statusHistory: (order.statusHistory ?? []).map((entry) => ({ status: entry.newStatus, previousStatus: entry.oldStatus, note: entry.note, createdAt: entry.createdAt })),
+      submittedAt: order.completedAt, createdAt: order.createdAt, items: order.items, total: order.totalSnapshot,
+      paymentUrl: order.paymentUrl, receiptUrl: order.receiptUrl, receiptPublicId: order.receiptPublicId,
+      shippingTrackingNumber: order.shippingTrackingNumber, shippingTrackingUrl: order.shippingTrackingUrl, shippingDetails: order.shippingDetails,
+    });
+  } catch (err) { next(err); }
 }

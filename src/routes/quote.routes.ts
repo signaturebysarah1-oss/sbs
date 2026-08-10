@@ -5,6 +5,7 @@ import {
   listMyQuotes,
   getMyQuote,
   updateMyQuote,
+  submitQuoteReceipt,
 } from '../controllers/quote.controller.js';
 
 const router = Router();
@@ -15,5 +16,6 @@ router.use(requireAuth);
 router.get('/my', listMyQuotes);
 router.get('/:id', getMyQuote);
 router.patch('/:id', updateMyQuote);
+router.patch('/:id/receipt', submitQuoteReceipt);
 
 export default router;

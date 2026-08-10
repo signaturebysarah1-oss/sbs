@@ -11,33 +11,43 @@ export interface CreateProductMaterialInput {
   name: string;
 }
 
+// All fields are optional to support incomplete draft products.
+// The service validates that published products have name, slug, and basePrice.
 export interface CreateProductInput {
-  name: string;
-  slug: string;
-  description: string | null;
+  name?: string | null;
+  slug?: string | null;
+  description?: string | null;
   category?: string | null;
   gender?: 'male' | 'female' | 'unisex' | null;
-  basePrice: number;
-  isCustomizable: boolean;
-  status: CatalogStatus;
-  isFeatured: boolean;
-  isHero: boolean;
+  basePrice?: number | null;
+  isCustomizable?: boolean;
+  status?: CatalogStatus;
+  isFeatured?: boolean;
+  isHero?: boolean;
   colors?: CreateProductColorInput[];
   materials?: CreateProductMaterialInput[];
   sizes?: number[];
 }
 
-export type UpdateProductInput = Partial<CreateProductInput>;
+export type UpdateProductInput = CreateProductInput;
 
-export interface AdminProduct extends CreateProductInput {
+export interface AdminProduct {
+  id: string;
+  name: string | null;
+  slug: string | null;
+  description: string | null;
   category: string | null;
   gender: 'male' | 'female' | 'unisex' | null;
-  id: string;
+  basePrice: number | null;
+  isCustomizable: boolean;
+  status: CatalogStatus;
+  isFeatured: boolean;
+  isHero: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface AdminProductDetails extends Omit<AdminProduct, 'colors' | 'materials' | 'sizes'> {
+export interface AdminProductDetails extends AdminProduct {
   colors: import('./catalog.types.js').ColorRef[];
   materials: import('./catalog.types.js').MaterialRef[];
   sizes: number[];
