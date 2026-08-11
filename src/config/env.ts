@@ -28,6 +28,7 @@ export const env = {
 
   frontendUrl: requireEnv('FRONTEND_URL'),
   adminUrl: requireEnv('ADMIN_URL'),
+  liveUrl: requireEnv('LIVE_URL'),
 
   resendApiKey: requireEnv('RESEND_API_KEY'),
   resendFromEmail: requireEnv('RESEND_FROM_EMAIL'),
