@@ -27,6 +27,11 @@ export interface Cart {
   id: string;
   profileId: string;
   status: CartStatus;
+  state: string | null;
+  city: string | null;
+  address: string | null;
+  paymentUrl: string | null;
+  receiptUrl: string | null;
   items: CartItem[];
   createdAt: string;
   updatedAt: string;
@@ -67,6 +72,9 @@ export interface CartHistory {
   profileId: string;
   status: string;
   contactMethod: string | null;
+  state: string | null;
+  city: string | null;
+  address: string | null;
   items: CartHistoryItem[];
   totalSnapshot: number;
   paymentUrl: string | null;
@@ -114,6 +122,13 @@ export interface UpdateCartItemInput {
   customMeasurements?: Record<string, unknown> | null;
   customNotes?: string | null;
 }
+export interface UpdateCartDetailsInput {
+  state?: string | null;
+  city?: string | null;
+  address?: string | null;
+  paymentUrl?: string | null;
+  receiptUrl?: string | null;
+}
 
 export interface CartSubmitResult {
   submittedCartId: string;
@@ -136,6 +151,9 @@ export interface UpdateCartOrderPaymentInput {
   paymentUrl?: string | null;
   receiptUrl?: string | null;
   receiptPublicId?: string | null;
+  state?: string | null;
+  city?: string | null;
+  address?: string | null;
 }
 
 export interface UpdateOrderFulfillmentInput {

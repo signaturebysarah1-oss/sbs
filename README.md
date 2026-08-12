@@ -859,6 +859,43 @@ Authorization: Bearer <access_token>
 
 ---
 
+## Quote, cart addresses, receipts, and analytics
+
+Guest quotes remain at `POST /api/quotes`; authenticated customers use `/api/cart`. Cloudinary uploads are performed by the frontend—the API only stores the submitted URLs. `state`, `city`, `address`, `paymentUrl`, and `receiptUrl` are nullable and may be explicitly set to `null`.
+
+```http
+POST /api/quotes
+Content-Type: application/json
+
+{
+  "guestName": "Ada", "guestEmail": "ada@example.com", "items": [],
+  "state": "Lagos", "city": "Victoria Island", "address": "12 Example Street",
+  "receiptUrl": "https://res.cloudinary.com/example/image/upload/receipt.jpg"
+}
+```
+
+```http
+PATCH /api/cart
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "state": "Lagos", "city": "Ikeja", "address": "10 Allen Avenue", "paymentUrl": null, "receiptUrl": null }
+```
+
+`PATCH /api/quotes/:id` accepts the address and URL fields for an owned customer quote. Admin quote payment updates use `PATCH /api/admin/quotes/:id/payment`; submitted cart-order payment/address updates use `PATCH /api/admin/cart/history/:id/payment`. Existing receipt routes remain available. All quote statuses are flexible non-empty strings; the established values are `pending`, `reviewing`, `approved`, `completed`, and `cancelled`. Update a status with:
+
+```http
+PATCH /api/admin/quotes/:id/status
+Authorization: Bearer <admin_access_token>
+Content-Type: application/json
+
+{ "status": "reviewing" }
+```
+
+`GET /api/admin/analytics?from=2026-01-01&to=2026-08-01` is restricted to `admin` and `super_admin`. It returns product lifecycle and daily-view totals/top products, quote and submitted-cart status/value/recent activity, user totals, contact totals/unread/recent data, and academy status/experience breakdowns. Both dates are optional and use inclusive calendar dates.
+
+Apply `src/database/migrations/015_addresses_analytics_and_product_views.sql` after migrations 001–014. It adds only nullable address/payment columns and the daily product-view aggregate table; no new environment variables are required.
+
 ## Deployment
 
 ### Render

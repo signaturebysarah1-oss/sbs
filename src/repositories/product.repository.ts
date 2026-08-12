@@ -255,6 +255,15 @@ export async function findProductBySlug(slug: string): Promise<Product | null> {
   return rowToProduct(result.rows[0] as Record<string, unknown>);
 }
 
+export async function recordProductView(productId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO product_view_daily (product_id, viewed_on, view_count)
+     VALUES ($1, CURRENT_DATE, 1)
+     ON CONFLICT (product_id, viewed_on) DO UPDATE SET view_count = product_view_daily.view_count + 1`,
+    [productId],
+  );
+}
+
 export async function findFeaturedProducts(): Promise<ProductSummary[]> {
   const result = await pool.query(
     `SELECT

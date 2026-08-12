@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { CUSTOMER_QUOTE_STATUSES } from '../types/quote.types.js';
+const nullableAddress = {
+  state: z.string().trim().max(100).nullable().optional(),
+  city: z.string().trim().max(100).nullable().optional(),
+  address: z.string().trim().max(2000).nullable().optional(),
+};
 
 // ─── Item schema ──────────────────────────────────────────────────────────────
 
@@ -52,6 +57,9 @@ export const createQuoteSchema = z.object({
     .max(20, 'phoneNumber must be at most 20 characters')
     .nullable()
     .optional(),
+  ...nullableAddress,
+  paymentUrl: z.string().url('paymentUrl must be a valid URL').nullable().optional(),
+  receiptUrl: z.string().url('receiptUrl must be a valid URL').nullable().optional(),
 });
 
 // ─── Update customer quote schema ─────────────────────────────────────────────
@@ -60,6 +68,9 @@ export const updateCustomerQuoteSchema = z.object({
   customerNotes: z.string().max(2000).nullable().optional(),
   items: z.array(quoteItemSchema).max(50, 'Maximum 50 items per quote').optional(),
   customerStatus: z.enum(CUSTOMER_QUOTE_STATUSES).optional(),
+  ...nullableAddress,
+  paymentUrl: z.string().url('paymentUrl must be a valid URL').nullable().optional(),
+  receiptUrl: z.string().url('receiptUrl must be a valid URL').nullable().optional(),
 }).refine(
   (data) => {
     const keys = Object.keys(data).filter((k) => data[k as keyof typeof data] !== undefined);

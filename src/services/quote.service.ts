@@ -105,6 +105,8 @@ export async function submitQuote(
       items: input.items ?? [],
       contactMethod: null,
       phoneNumber: null,
+      state: input.state ?? null, city: input.city ?? null, address: input.address ?? null,
+      paymentUrl: input.paymentUrl ?? null, receiptUrl: input.receiptUrl ?? null,
     });
 
     const quote = await findQuoteByIdAdmin(quoteId);
@@ -146,6 +148,8 @@ export async function submitQuote(
         items: input.items ?? [],
         contactMethod,
         phoneNumber: contactMethod === 'whatsapp' ? phoneNumber : null,
+        state: input.state ?? null, city: input.city ?? null, address: input.address ?? null,
+        paymentUrl: input.paymentUrl ?? null, receiptUrl: input.receiptUrl ?? null,
       });
 
   return finishAuthenticatedQuote(quoteId, profileId, settings);

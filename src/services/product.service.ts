@@ -15,6 +15,7 @@ import {
   updateProductVariantById,
   deleteProductVariantById,
   type ProductFilter,
+  recordProductView,
 } from '../repositories/product.repository.js';
 import { AppError } from '../utils/AppError.js';
 import type { Product, ProductSummary } from '../types/catalog.types.js';
@@ -42,6 +43,8 @@ export async function getAllProductsForAdmin(): Promise<AdminProductCatalogueIte
 export async function getProductBySlug(slug: string): Promise<Product> {
   const product = await findProductBySlug(slug);
   if (!product) throw AppError.notFound(`Product not found: ${slug}`);
+  // Daily upsert keeps anonymous view tracking compact; never block product delivery on analytics.
+  recordProductView(product.id).catch((err: unknown) => console.error('[product] Failed to record view:', err));
   return product;
 }
 

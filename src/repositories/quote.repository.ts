@@ -43,6 +43,9 @@ function rowToSummary(row: Record<string, unknown>): QuoteRequestSummary {
     customerStatus: row['customer_status'] as CustomerQuoteStatus,
     contactMethod: (row['contact_method'] as 'email' | 'whatsapp' | null) ?? null,
     customerNotes: (row['customer_notes'] as string | null) ?? null,
+    state: (row['state'] as string | null) ?? null,
+    city: (row['city'] as string | null) ?? null,
+    address: (row['address'] as string | null) ?? null,
     paymentUrl: (row['payment_url'] as string | null) ?? null,
     receiptUrl: (row['receipt_url'] as string | null) ?? null,
     receiptPublicId: (row['receipt_public_id'] as string | null) ?? null,
@@ -91,6 +94,11 @@ export async function createQuoteWithItems(data: {
   items: QuoteItemInput[];
   contactMethod: 'email' | 'whatsapp' | null;
   phoneNumber: string | null;
+  state: string | null;
+  city: string | null;
+  address: string | null;
+  paymentUrl: string | null;
+  receiptUrl: string | null;
 }): Promise<string> {
   const client = await pool.connect();
   try {
@@ -115,11 +123,11 @@ export async function createQuoteWithItems(data: {
     const quoteResult = await client.query(
       `INSERT INTO quote_requests
          (reference_number, profile_id, guest_name, guest_email, guest_phone,
-          customer_notes, status, customer_status, contact_method)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'pending', $7)
+          customer_notes, status, customer_status, contact_method, state, city, address, payment_url, receipt_url)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'pending', $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [referenceNumber, data.profileId, data.guestName, data.guestEmail,
-       data.guestPhone, data.customerNotes, data.contactMethod],
+       data.guestPhone, data.customerNotes, data.contactMethod, data.state, data.city, data.address, data.paymentUrl, data.receiptUrl],
     );
 
     const quoteId = (quoteResult.rows[0] as Record<string, unknown>)['id'] as string;
@@ -162,7 +170,7 @@ export async function createQuoteWithItems(data: {
 export async function findQuotesByProfileId(profileId: string): Promise<QuoteRequestSummary[]> {
   const result = await pool.query(
     `SELECT id, reference_number, profile_id, status, customer_notes,
-            customer_status, contact_method, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            customer_status, contact_method, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests WHERE profile_id = $1 ORDER BY created_at DESC`,
     [profileId],
@@ -173,7 +181,7 @@ export async function findQuotesByProfileId(profileId: string): Promise<QuoteReq
 export async function findQuoteByIdAndProfileId(id: string, profileId: string): Promise<QuoteRequest | null> {
   const result = await pool.query(
     `SELECT id, reference_number, profile_id, status, customer_status, contact_method,
-            customer_notes, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            customer_notes, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests WHERE id = $1 AND profile_id = $2`,
     [id, profileId],
@@ -192,7 +200,7 @@ export async function findQuoteByIdAndProfileId(id: string, profileId: string): 
 export async function findQuoteByReferenceNumber(referenceNumber: string): Promise<QuoteRequest | null> {
   const result = await pool.query(
     `SELECT id, reference_number, profile_id, status, customer_status, contact_method,
-            customer_notes, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            customer_notes, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests WHERE reference_number = $1`,
     [referenceNumber],
@@ -209,7 +217,7 @@ export async function findQuoteByReferenceNumber(referenceNumber: string): Promi
 export async function findGuestQuoteByReferenceAndEmail(referenceNumber: string, email: string): Promise<QuoteRequest | null> {
   const result = await pool.query(
     `SELECT id, reference_number, profile_id, status, customer_status, contact_method,
-            customer_notes, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            customer_notes, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             submitted_at, reviewed_at, completed_at, created_at, updated_at
      FROM quote_requests WHERE reference_number = $1 AND profile_id IS NULL AND lower(guest_email) = lower($2)`,
     [referenceNumber, email],
@@ -230,7 +238,7 @@ export async function findAllQuotesAdmin(status?: QuoteStatus): Promise<QuoteReq
   const result = await pool.query(
     `SELECT
        qr.id, qr.reference_number, qr.profile_id, qr.status, qr.customer_status,
-       qr.customer_notes, qr.admin_notes, qr.contact_method,
+       qr.customer_notes, qr.admin_notes, qr.contact_method, qr.state, qr.city, qr.address,
        qr.payment_url, qr.receipt_url, qr.receipt_public_id, qr.shipping_tracking_number, qr.shipping_tracking_url, qr.shipping_details,
        qr.submitted_at, qr.reviewed_at, qr.completed_at, qr.created_at, qr.updated_at,
        COALESCE(p.full_name, qr.guest_name)  AS customer_name,
@@ -250,7 +258,7 @@ export async function findQuoteByIdAdmin(id: string): Promise<QuoteRequestAdmin 
   const result = await pool.query(
     `SELECT
        qr.id, qr.reference_number, qr.profile_id, qr.status, qr.customer_status,
-       qr.customer_notes, qr.admin_notes, qr.contact_method,
+       qr.customer_notes, qr.admin_notes, qr.contact_method, qr.state, qr.city, qr.address,
        qr.payment_url, qr.receipt_url, qr.receipt_public_id, qr.shipping_tracking_number, qr.shipping_tracking_url, qr.shipping_details,
        qr.submitted_at, qr.reviewed_at, qr.completed_at, qr.created_at, qr.updated_at,
        COALESCE(p.full_name, qr.guest_name)  AS customer_name,
@@ -283,14 +291,14 @@ export async function updateQuoteStatus(data: {
   const result = await pool.query(
     `WITH updated_quote AS (
        UPDATE quote_requests
-       SET status = $1,
-           reviewed_at  = CASE WHEN $1 = 'reviewing' AND reviewed_at IS NULL THEN now() ELSE reviewed_at END,
-           completed_at = CASE WHEN $1 = 'completed' AND completed_at IS NULL THEN now() ELSE completed_at END
+       SET status = $1::text,
+           reviewed_at  = CASE WHEN $1::text = 'reviewing' AND reviewed_at IS NULL THEN now() ELSE reviewed_at END,
+           completed_at = CASE WHEN $1::text = 'completed' AND completed_at IS NULL THEN now() ELSE completed_at END
        WHERE id = $2 AND status = $3
        RETURNING id, status
      ), inserted_history AS (
        INSERT INTO quote_status_history (quote_request_id, old_status, new_status, changed_by, note)
-       SELECT id, $3, $1, $4, $5 FROM updated_quote
+       SELECT id, $3::text, $1::text, $4, $5 FROM updated_quote
      )
      SELECT status FROM updated_quote`,
     [data.newStatus, data.quoteId, data.oldStatus, data.changedByProfileId, data.note],
@@ -373,6 +381,11 @@ export async function updateCustomerQuoteWithItems(data: {
   profileId: string;
   customerNotes?: string | null;
   customerStatus?: CustomerQuoteStatus;
+  state?: string | null;
+  city?: string | null;
+  address?: string | null;
+  paymentUrl?: string | null;
+  receiptUrl?: string | null;
   items?: QuoteItemInput[];
 }): Promise<boolean> {
   const client = await pool.connect();
@@ -410,11 +423,19 @@ export async function updateCustomerQuoteWithItems(data: {
     const result = await client.query(
       `UPDATE quote_requests
        SET customer_notes  = CASE WHEN $1 THEN $2 ELSE customer_notes END,
-           customer_status = COALESCE($3, customer_status)
-       WHERE id = $4 AND profile_id = $5
+           customer_status = COALESCE($3, customer_status),
+           state = CASE WHEN $4 THEN $5 ELSE state END,
+           city = CASE WHEN $6 THEN $7 ELSE city END,
+           address = CASE WHEN $8 THEN $9 ELSE address END,
+           payment_url = CASE WHEN $10 THEN $11 ELSE payment_url END,
+           receipt_url = CASE WHEN $12 THEN $13 ELSE receipt_url END
+       WHERE id = $14 AND profile_id = $15
        RETURNING id`,
       [data.customerNotes !== undefined, data.customerNotes ?? null,
-       data.customerStatus ?? null, data.quoteId, data.profileId],
+       data.customerStatus ?? null, data.state !== undefined, data.state ?? null,
+       data.city !== undefined, data.city ?? null, data.address !== undefined, data.address ?? null,
+       data.paymentUrl !== undefined, data.paymentUrl ?? null, data.receiptUrl !== undefined, data.receiptUrl ?? null,
+       data.quoteId, data.profileId],
     );
     await client.query('COMMIT');
     return result.rows.length > 0;

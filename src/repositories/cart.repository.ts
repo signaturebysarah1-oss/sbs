@@ -40,6 +40,11 @@ function rowToCart(cartRow: Record<string, unknown>, items: CartItem[]): Cart {
     id: cartRow['id'] as string,
     profileId: cartRow['profile_id'] as string,
     status: cartRow['status'] as Cart['status'],
+    state: (cartRow['state'] as string | null) ?? null,
+    city: (cartRow['city'] as string | null) ?? null,
+    address: (cartRow['address'] as string | null) ?? null,
+    paymentUrl: (cartRow['payment_url'] as string | null) ?? null,
+    receiptUrl: (cartRow['receipt_url'] as string | null) ?? null,
     items,
     createdAt: (cartRow['created_at'] as Date).toISOString(),
     updatedAt: (cartRow['updated_at'] as Date).toISOString(),
@@ -54,6 +59,9 @@ function rowToCartHistory(row: Record<string, unknown>): CartHistory {
     profileId: row['profile_id'] as string,
     status: (row['status'] as string) ?? 'submitted',
     contactMethod: (row['contact_method'] as string | null) ?? null,
+    state: (row['state'] as string | null) ?? null,
+    city: (row['city'] as string | null) ?? null,
+    address: (row['address'] as string | null) ?? null,
     items: row['items'] as CartHistory['items'],
     totalSnapshot: parseFloat(row['total_snapshot'] as string),
     paymentUrl: (row['payment_url'] as string | null) ?? null,
@@ -80,7 +88,7 @@ async function fetchCartItems(cartId: string): Promise<CartItem[]> {
 
 export async function findActiveCartByProfileId(profileId: string): Promise<Cart | null> {
   const result = await pool.query(
-    `SELECT id, profile_id, status, created_at, updated_at
+    `SELECT id, profile_id, status, state, city, address, payment_url, receipt_url, created_at, updated_at
      FROM carts WHERE profile_id = $1 AND status = 'active'`,
     [profileId],
   );
@@ -95,7 +103,7 @@ export async function findOrCreateActiveCart(profileId: string): Promise<Cart> {
   if (existing) return existing;
   const result = await pool.query(
     `INSERT INTO carts (profile_id, status) VALUES ($1, 'active')
-     RETURNING id, profile_id, status, created_at, updated_at`,
+     RETURNING id, profile_id, status, state, city, address, payment_url, receipt_url, created_at, updated_at`,
     [profileId],
   );
   return rowToCart(result.rows[0] as Record<string, unknown>, []);
@@ -107,7 +115,7 @@ export async function addItemToActiveCart(profileId: string, input: AddCartItemI
     await client.query('BEGIN');
     let cartRow: Record<string, unknown>;
     const existing = await client.query(
-      `SELECT id, profile_id, status, created_at, updated_at
+      `SELECT id, profile_id, status, state, city, address, payment_url, receipt_url, created_at, updated_at
        FROM carts WHERE profile_id = $1 AND status = 'active' FOR UPDATE`,
       [profileId],
     );
@@ -116,7 +124,7 @@ export async function addItemToActiveCart(profileId: string, input: AddCartItemI
     } else {
       const created = await client.query(
         `INSERT INTO carts (profile_id, status) VALUES ($1, 'active')
-         RETURNING id, profile_id, status, created_at, updated_at`,
+         RETURNING id, profile_id, status, state, city, address, payment_url, receipt_url, created_at, updated_at`,
         [profileId],
       );
       cartRow = created.rows[0] as Record<string, unknown>;
@@ -213,6 +221,21 @@ export async function clearActiveCart(profileId: string): Promise<void> {
   );
 }
 
+export async function updateActiveCartDetails(profileId: string, input: import('../types/cart.types.js').UpdateCartDetailsInput): Promise<boolean> {
+  const columns: Record<string, string> = { state: 'state', city: 'city', address: 'address', paymentUrl: 'payment_url', receiptUrl: 'receipt_url' };
+  const values: unknown[] = [];
+  const setClauses: string[] = ['updated_at = now()'];
+  for (const [key, column] of Object.entries(columns)) {
+    const value = input[key as keyof typeof input];
+    if (value !== undefined) { values.push(value); setClauses.push(`${column} = $${values.length}`); }
+  }
+  values.push(profileId);
+  const result = await pool.query(
+    `UPDATE carts SET ${setClauses.join(', ')} WHERE profile_id = $${values.length} AND status = 'active' RETURNING id`, values,
+  );
+  return result.rows.length > 0;
+}
+
 export async function submitActiveCart(
   profileId: string,
   contactMethod: 'email' | 'whatsapp',
@@ -223,7 +246,7 @@ export async function submitActiveCart(
     await client.query('BEGIN');
 
     const cartResult = await client.query(
-      `SELECT id FROM carts WHERE profile_id = $1 AND status = 'active' FOR UPDATE`,
+      `SELECT id, state, city, address, payment_url, receipt_url FROM carts WHERE profile_id = $1 AND status = 'active' FOR UPDATE`,
       [profileId],
     );
     if (cartResult.rows.length === 0) {
@@ -279,10 +302,12 @@ export async function submitActiveCart(
 
     const historyResult = await client.query(
       `INSERT INTO cart_history
-         (original_cart_id, profile_id, items, total_snapshot, contact_method, order_number, status, completed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'submitted', now())
+         (original_cart_id, profile_id, items, total_snapshot, contact_method, order_number, status, completed_at, state, city, address, payment_url, receipt_url)
+       VALUES ($1, $2, $3, $4, $5, $6, 'submitted', now(), $7, $8, $9, $10, $11)
        RETURNING id`,
-      [cartId, profileId, JSON.stringify(items), totalSnapshot, contactMethod, orderNumber],
+      [cartId, profileId, JSON.stringify(items), totalSnapshot, contactMethod, orderNumber,
+       (cartResult.rows[0] as Record<string, unknown>)['state'], (cartResult.rows[0] as Record<string, unknown>)['city'], (cartResult.rows[0] as Record<string, unknown>)['address'],
+       (cartResult.rows[0] as Record<string, unknown>)['payment_url'], (cartResult.rows[0] as Record<string, unknown>)['receipt_url']],
     );
     const historyId = (historyResult.rows[0] as Record<string, unknown>)['id'] as string;
 
@@ -314,7 +339,7 @@ export async function submitActiveCart(
 export async function findCartHistoryByProfileId(profileId: string): Promise<CartHistory[]> {
   const result = await pool.query(
     `SELECT id, order_number, original_cart_id, profile_id, status, contact_method,
-            items, total_snapshot, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            items, total_snapshot, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             completed_at, created_at
      FROM cart_history WHERE profile_id = $1 ORDER BY completed_at DESC`,
     [profileId],
@@ -325,7 +350,7 @@ export async function findCartHistoryByProfileId(profileId: string): Promise<Car
 export async function findCartHistoryById(id: string): Promise<CartHistory | null> {
   const result = await pool.query(
     `SELECT id, order_number, original_cart_id, profile_id, status, contact_method,
-            items, total_snapshot, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            items, total_snapshot, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             completed_at, created_at
      FROM cart_history WHERE id = $1`,
     [id],
@@ -341,7 +366,7 @@ export async function findCartHistoryById(id: string): Promise<CartHistory | nul
 export async function findCartHistoryByOrderNumber(orderNumber: string): Promise<CartHistory | null> {
   const result = await pool.query(
     `SELECT id, order_number, original_cart_id, profile_id, status, contact_method,
-            items, total_snapshot, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
+            items, total_snapshot, state, city, address, payment_url, receipt_url, receipt_public_id, shipping_tracking_number, shipping_tracking_url, shipping_details,
             completed_at, created_at
      FROM cart_history WHERE order_number = $1`,
     [orderNumber],
@@ -378,7 +403,7 @@ export async function findAllCartOrdersAdmin(filters: {
   const result = await pool.query(
     `SELECT
        ch.id, ch.order_number, ch.original_cart_id, ch.profile_id, ch.status,
-       ch.contact_method, ch.items, ch.total_snapshot,
+       ch.contact_method, ch.items, ch.total_snapshot, ch.state, ch.city, ch.address,
        ch.payment_url, ch.receipt_url, ch.receipt_public_id, ch.shipping_tracking_number, ch.shipping_tracking_url, ch.shipping_details,
        ch.completed_at, ch.created_at,
        p.full_name  AS customer_name,
@@ -404,7 +429,7 @@ export async function findCartOrderByIdAdmin(id: string): Promise<AdminCartOrder
   const result = await pool.query(
     `SELECT
        ch.id, ch.order_number, ch.original_cart_id, ch.profile_id, ch.status,
-       ch.contact_method, ch.items, ch.total_snapshot,
+       ch.contact_method, ch.items, ch.total_snapshot, ch.state, ch.city, ch.address,
        ch.payment_url, ch.receipt_url, ch.receipt_public_id, ch.shipping_tracking_number, ch.shipping_tracking_url, ch.shipping_details,
        ch.completed_at, ch.created_at,
        p.full_name  AS customer_name,
@@ -481,6 +506,9 @@ export async function updateCartOrderPayment(id: string, input: UpdateCartOrderP
   if (input.paymentUrl !== undefined) { setClauses.push(`payment_url = $${idx++}`); values.push(input.paymentUrl); }
   if (input.receiptUrl !== undefined) { setClauses.push(`receipt_url = $${idx++}`); values.push(input.receiptUrl); }
   if (input.receiptPublicId !== undefined) { setClauses.push(`receipt_public_id = $${idx++}`); values.push(input.receiptPublicId); }
+  if (input.state !== undefined) { setClauses.push(`state = $${idx++}`); values.push(input.state); }
+  if (input.city !== undefined) { setClauses.push(`city = $${idx++}`); values.push(input.city); }
+  if (input.address !== undefined) { setClauses.push(`address = $${idx++}`); values.push(input.address); }
   if (setClauses.length === 0) return false;
   values.push(id);
   const result = await pool.query(

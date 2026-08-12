@@ -37,6 +37,14 @@ export const updateCartItemSchema = z
     { message: 'At least one field must be provided' },
   );
 
+export const updateCartDetailsSchema = z.object({
+  state: z.string().trim().max(100).nullable().optional(),
+  city: z.string().trim().max(100).nullable().optional(),
+  address: z.string().trim().max(2000).nullable().optional(),
+  paymentUrl: z.string().url('paymentUrl must be a valid URL').nullable().optional(),
+  receiptUrl: z.string().url('receiptUrl must be a valid URL').nullable().optional(),
+}).refine((d) => Object.values(d).some((value) => value !== undefined), 'At least one cart field must be provided');
+
 export const updateCartOrderStatusSchema = z.object({
   status: z.string().trim().min(1, 'status is required').max(50),
   note: z.string().max(1000).nullable().optional(),
@@ -46,9 +54,12 @@ export const updateCartOrderPaymentSchema = z.object({
   paymentUrl: z.string().url('paymentUrl must be a valid URL').nullable().optional(),
   receiptUrl: z.string().url('receiptUrl must be a valid URL').nullable().optional(),
   receiptPublicId: z.string().trim().max(255).nullable().optional(),
+  state: z.string().trim().max(100).nullable().optional(),
+  city: z.string().trim().max(100).nullable().optional(),
+  address: z.string().trim().max(2000).nullable().optional(),
 }).refine(
-  (d) => d.paymentUrl !== undefined || d.receiptUrl !== undefined || d.receiptPublicId !== undefined,
-  'At least one payment field must be provided',
+  (d) => Object.values(d).some((value) => value !== undefined),
+  'At least one payment or address field must be provided',
 );
 
 export const submitReceiptSchema = z.object({

@@ -10,12 +10,14 @@ import {
   submitCart,
   updateCartItem,
   submitCartReceipt,
+  updateCartDetails,
 } from '../controllers/cart.controller.js';
 
 const router = Router();
 
 router.use(requireAuth);
 router.get('/', getCart);
+router.patch('/', updateCartDetails);
 router.get('/history', getCartHistory);
 router.get('/history/:id', getCartHistoryItem);
 router.patch('/history/:id/receipt', submitCartReceipt);

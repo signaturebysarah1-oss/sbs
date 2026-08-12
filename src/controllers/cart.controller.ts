@@ -16,8 +16,9 @@ import {
   submitMyCartReceipt,
   trackMyCartOrderByNumber,
   setCartOrderFulfillment,
+  updateMyCartDetails,
 } from '../services/cart.service.js';
-import { addCartItemSchema, updateCartItemSchema, submitCartSchema, updateCartOrderPaymentSchema, updateCartOrderStatusSchema, submitReceiptSchema, updateFulfillmentSchema } from '../validators/cart.validator.js';
+import { addCartItemSchema, updateCartItemSchema, updateCartDetailsSchema, submitCartSchema, updateCartOrderPaymentSchema, updateCartOrderStatusSchema, submitReceiptSchema, updateFulfillmentSchema } from '../validators/cart.validator.js';
 import { AppError } from '../utils/AppError.js';
 import { HttpStatus } from '../types/api.types.js';
 import { sendSuccess } from '../utils/response.js';
@@ -98,6 +99,14 @@ export async function clearCart(
   } catch (err) {
     next(err);
   }
+}
+
+export async function updateCartDetails(req: MaybeAuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const parsed = updateCartDetailsSchema.safeParse(req.body);
+    if (!parsed.success) throw AppError.badRequest(parsed.error.issues[0]?.message ?? 'Invalid request body');
+    sendSuccess(res, 'Cart updated', await updateMyCartDetails(resolvedProfileId(req), parsed.data));
+  } catch (err) { next(err); }
 }
 
 export async function getCartHistory(
@@ -198,6 +207,7 @@ export async function trackMyCartOrder(req: MaybeAuthenticatedRequest, res: Resp
       statusHistory: (order.statusHistory ?? []).map((entry) => ({ status: entry.newStatus, previousStatus: entry.oldStatus, note: entry.note, createdAt: entry.createdAt })),
       submittedAt: order.completedAt, createdAt: order.createdAt, items: order.items, total: order.totalSnapshot,
       paymentUrl: order.paymentUrl, receiptUrl: order.receiptUrl, receiptPublicId: order.receiptPublicId,
+      state: order.state, city: order.city, address: order.address,
       shippingTrackingNumber: order.shippingTrackingNumber, shippingTrackingUrl: order.shippingTrackingUrl, shippingDetails: order.shippingDetails,
     });
   } catch (err) { next(err); }

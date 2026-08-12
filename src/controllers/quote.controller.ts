@@ -115,6 +115,7 @@ export async function trackMyQuote(req: MaybeAuthenticatedRequest, res: Response
       statusHistory: quote.statusHistory.map((entry) => ({ status: entry.newStatus, previousStatus: entry.oldStatus, note: entry.note, createdAt: entry.createdAt })),
       submittedAt: quote.submittedAt, reviewedAt: quote.reviewedAt, completedAt: quote.completedAt, createdAt: quote.createdAt,
       items: quote.items, total, paymentUrl: quote.paymentUrl, receiptUrl: quote.receiptUrl, receiptPublicId: quote.receiptPublicId,
+      state: quote.state, city: quote.city, address: quote.address,
       shippingTrackingNumber: quote.shippingTrackingNumber, shippingTrackingUrl: quote.shippingTrackingUrl, shippingDetails: quote.shippingDetails,
     });
   } catch (err) { next(err); }

@@ -15,6 +15,7 @@ import {
   findCartOrderStatusHistory,
   updateCartOrderReceiptByProfileId,
   updateCartOrderFulfillment,
+  updateActiveCartDetails,
 } from '../repositories/cart.repository.js';
 import { AppError } from '../utils/AppError.js';
 import { sendEmail } from '../utils/mailer.js';
@@ -33,6 +34,7 @@ import type {
   UpdateCartOrderPaymentInput,
   UpdateCartOrderStatusInput,
   UpdateOrderFulfillmentInput,
+  UpdateCartDetailsInput,
 } from '../types/cart.types.js';
 import type { AuthUser } from '../types/api.types.js';
 
@@ -56,6 +58,11 @@ export async function removeMyCartItem(profileId: string, itemId: string): Promi
 
 export async function clearMyCart(profileId: string): Promise<void> {
   await clearActiveCart(profileId);
+}
+
+export async function updateMyCartDetails(profileId: string, input: UpdateCartDetailsInput): Promise<Cart> {
+  if (!await updateActiveCartDetails(profileId, input)) throw AppError.notFound('Active cart not found');
+  return getMyCart(profileId);
 }
 
 export async function getMyCartHistory(profileId: string): Promise<CartHistory[]> {

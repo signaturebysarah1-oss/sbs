@@ -34,12 +34,22 @@ export interface CreateQuoteInput {
   items?: QuoteItemInput[];   // optional — customer may create an empty draft first
   contactMethod?: 'email' | 'whatsapp';
   phoneNumber?: string | null;
+  state?: string | null;
+  city?: string | null;
+  address?: string | null;
+  paymentUrl?: string | null;
+  receiptUrl?: string | null;
 }
 
 export interface UpdateCustomerQuoteInput {
   customerNotes?: string | null;
   items?: QuoteItemInput[];
   customerStatus?: CustomerQuoteStatus;
+  state?: string | null;
+  city?: string | null;
+  address?: string | null;
+  paymentUrl?: string | null;
+  receiptUrl?: string | null;
 }
 
 // ─── Status update input ──────────────────────────────────────────────────────
@@ -87,6 +97,9 @@ export interface QuoteRequest {
   customerStatus: CustomerQuoteStatus;
   contactMethod: 'email' | 'whatsapp' | null;
   customerNotes: string | null;
+  state: string | null;
+  city: string | null;
+  address: string | null;
   paymentUrl: string | null;
   receiptUrl: string | null;
   receiptPublicId: string | null;

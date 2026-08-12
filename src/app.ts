@@ -32,6 +32,7 @@ import adminCustomizationRoutes from './routes/admin-customization.routes.js';
 import adminSettingsRoutes from './routes/admin-settings.routes.js';
 import adminCartRoutes from './routes/admin-cart.routes.js';
 import trackingRoutes from './routes/tracking.routes.js';
+import adminAnalyticsRoutes from './routes/admin-analytics.routes.js';
 const app = express();
 
 // ─── Security ─────────────────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ app.use('/api/customizations', customizationRoutes);
 app.use('/api/admin/customizations', adminCustomizationRoutes);
 app.use('/api/admin/settings', adminSettingsRoutes);
 app.use('/api/admin/cart', adminCartRoutes);
+app.use('/api/admin/analytics', adminAnalyticsRoutes);
 app.use('/api/tracking', trackingRoutes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
